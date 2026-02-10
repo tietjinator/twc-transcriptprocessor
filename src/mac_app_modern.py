@@ -806,11 +806,11 @@ class TranscriptProcessorApp:
                 progress_callback=self.log
             )
 
-            # Update UI in main thread
-            self.root.after(0, self._processing_complete, len(results), len(file_paths))
+            # Tk is not thread-safe; queue control events for the main thread.
+            self.log_queue.put(("__PROCESS_COMPLETE__", len(results), len(file_paths)))
 
         except Exception as e:
-            self.root.after(0, self._processing_error, str(e))
+            self.log_queue.put(("__PROCESS_ERROR__", str(e)))
 
     def _processing_complete(self, success_count, total_count):
         """Called when processing completes"""
@@ -872,12 +872,25 @@ class TranscriptProcessorApp:
         """Fallback status reset when completion is reported through streamed logs."""
         if not self.processing_active:
             return
-        match = re.search(r"Completed:\s*(\d+)\s*/\s*(\d+)\s*files processed successfully", message)
-        if not match:
-            return
+        match = re.search(
+            r"completed:\s*(\d+)\s*/\s*(\d+)\s*files processed successfully",
+            message,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            success_count = int(match.group(1))
+            total_count = int(match.group(2))
+        else:
+            fallback = re.search(
+                r"successful:\s*(\d+)\s*/\s*(\d+)",
+                message,
+                flags=re.IGNORECASE,
+            )
+            if not fallback:
+                return
+            success_count = int(fallback.group(1))
+            total_count = int(fallback.group(2))
 
-        success_count = int(match.group(1))
-        total_count = int(match.group(2))
         self.stop_activity_indicator()
         self.processing_active = False
 
@@ -909,9 +922,10 @@ class TranscriptProcessorApp:
         self._append_log(message)
 
     def _append_log(self, message: str):
-        self.log_text.insert(tk.END, message + "\n")
+        text = str(message)
+        self.log_text.insert(tk.END, text + "\n")
         self.log_text.see(tk.END)
-        self._maybe_finalize_from_log(message)
+        self._maybe_finalize_from_log(text)
         self.root.update_idletasks()
 
     def _flush_log_queue(self):
@@ -920,6 +934,14 @@ class TranscriptProcessorApp:
                 msg = self.log_queue.get_nowait()
             except queue.Empty:
                 break
+            if isinstance(msg, tuple) and msg:
+                event = msg[0]
+                if event == "__PROCESS_COMPLETE__":
+                    self._processing_complete(msg[1], msg[2])
+                    continue
+                if event == "__PROCESS_ERROR__":
+                    self._processing_error(msg[1])
+                    continue
             self._append_log(msg)
         self.root.after(100, self._flush_log_queue)
 

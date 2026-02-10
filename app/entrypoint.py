@@ -25,6 +25,7 @@ def launch_real_app():
     env = os.environ.copy()
     app_src = str(RUNTIME_DIR / "app" / "src")
     env["PYTHONPATH"] = app_src + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+    env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + env.get("PATH", "")
 
     tcl_dir = RUNTIME_DIR / "python" / "lib" / "tcl9.0"
     tk_dir = RUNTIME_DIR / "python" / "lib" / "tk9.0"

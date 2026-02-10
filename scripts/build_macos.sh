@@ -47,6 +47,13 @@ echo "Using build Python: $BUILD_PYTHON ($PY_IMPL $PY_VER)"
 # 2) Create isolated build venv (recreate if interpreter changed or unknown).
 if [ -d "$VENV_DIR" ]; then
   RECREATE_VENV=0
+  EXPECTED_VENV_PY="$VENV_DIR/bin/python$PY_VER"
+
+  # Repair stale/broken venvs after runtime Python refreshes.
+  if [ ! -x "$VENV_DIR/bin/python" ] || [ ! -x "$EXPECTED_VENV_PY" ]; then
+    RECREATE_VENV=1
+  fi
+
   if [ ! -f "$VENV_PY_MARKER" ]; then
     RECREATE_VENV=1
   else

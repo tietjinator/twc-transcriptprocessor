@@ -174,6 +174,10 @@ def _ensure_system_deps(progress_cb=None):
             missing.append(pkg)
 
     if not missing:
+        # Sanity-check FFmpeg even when brew reports all packages present.
+        ffmpeg_bin = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
+        if not Path(ffmpeg_bin).exists():
+            raise RuntimeError("FFmpeg was not found after dependency checks. Please install Homebrew FFmpeg and retry.")
         return
 
     total = len(missing)
@@ -194,6 +198,10 @@ def _ensure_system_deps(progress_cb=None):
         ret = proc.wait()
         if ret != 0:
             raise RuntimeError(f"Failed to install {pkg} via Homebrew.")
+
+    ffmpeg_bin = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
+    if not Path(ffmpeg_bin).exists():
+        raise RuntimeError("FFmpeg install did not complete correctly. Please run 'brew install ffmpeg' and retry.")
 
 
 def _load_credentials() -> dict:
@@ -301,6 +309,7 @@ def _launch_runtime_app() -> tuple[bool, str]:
         env = os.environ.copy()
         app_src = str(RUNTIME_DIR / "app" / "src")
         env["PYTHONPATH"] = app_src + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+        env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + env.get("PATH", "")
 
         tcl_dir = RUNTIME_DIR / "python" / "lib" / "tcl9.0"
         tk_dir = RUNTIME_DIR / "python" / "lib" / "tk9.0"

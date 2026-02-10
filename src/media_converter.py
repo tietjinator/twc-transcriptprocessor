@@ -72,7 +72,19 @@ class MediaConverter:
             progress_callback(f"Converting {input_file.name} to WAV...")
 
         if not self.ffmpeg_path:
-            raise RuntimeError("FFmpeg not found. Please run setup to install FFmpeg.")
+            try:
+                # Re-resolve at conversion time so installs done after app launch are picked up.
+                self.ffmpeg_path = self._find_ffmpeg()
+            except RuntimeError:
+                raise RuntimeError("FFmpeg not found. Please run setup to install FFmpeg.")
+        else:
+            try:
+                subprocess.run([self.ffmpeg_path, '-version'], capture_output=True, check=True, timeout=2)
+            except Exception:
+                try:
+                    self.ffmpeg_path = self._find_ffmpeg()
+                except RuntimeError:
+                    raise RuntimeError("FFmpeg not found. Please run setup to install FFmpeg.")
 
         # Create output filename
         output_file = self.temp_dir / f"{input_file.stem}_converted.wav"
