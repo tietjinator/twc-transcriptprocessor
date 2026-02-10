@@ -245,7 +245,7 @@ def _launch_runtime_app() -> tuple[bool, str]:
 def run_bootstrap_ui():
     try:
         import tkinter as tk
-        from tkinter import ttk, messagebox
+        from tkinter import messagebox
     except Exception:
         return run_bootstrap_cli()
 
@@ -359,6 +359,95 @@ def run_bootstrap_ui():
             if self.enabled and self.command:
                 self.command()
 
+    class RoundedProgress(tk.Canvas):
+        def __init__(
+            self,
+            master,
+            width=420,
+            height=14,
+            radius=7,
+            bg_color="#e5e7eb",
+            fg_color="#0A84FF",
+        ):
+            super().__init__(
+                master,
+                width=width,
+                height=height,
+                bg=master["bg"],
+                highlightthickness=0,
+                bd=0,
+                relief=tk.FLAT,
+            )
+            self._width = width
+            self._height = height
+            self._radius = radius
+            self._bg_color = bg_color
+            self._fg_color = fg_color
+            self._value = 0
+            self._max = 100
+            self._animating = False
+            self._anim_pos = 0
+            self._anim_interval = 20
+            self._draw_determinate()
+
+        def _draw_round(self, x1, y1, x2, y2, radius, color):
+            radius = max(0, min(radius, (y2 - y1) / 2, (x2 - x1) / 2))
+            if x2 - x1 <= 0:
+                return
+            if radius <= 0:
+                self.create_rectangle(x1, y1, x2, y2, fill=color, outline="")
+                return
+            self.create_rectangle(x1 + radius, y1, x2 - radius, y2, fill=color, outline="")
+            self.create_oval(x1, y1, x1 + 2 * radius, y2, fill=color, outline="")
+            self.create_oval(x2 - 2 * radius, y1, x2, y2, fill=color, outline="")
+
+        def _draw_determinate(self):
+            self.delete("all")
+            self._draw_round(0, 0, self._width, self._height, self._radius, self._bg_color)
+            if self._max <= 0:
+                return
+            fill_w = int(self._width * (self._value / self._max))
+            if fill_w <= 0:
+                return
+            if fill_w < self._height:
+                self.create_oval(0, 0, fill_w, self._height, fill=self._fg_color, outline="")
+            else:
+                self._draw_round(0, 0, fill_w, self._height, self._radius, self._fg_color)
+
+        def set(self, value, maximum=100):
+            self._value = max(0, min(value, maximum))
+            self._max = max(1, maximum)
+            self._animating = False
+            self._draw_determinate()
+
+        def start(self, interval=20):
+            self._anim_interval = interval
+            if self._animating:
+                return
+            self._animating = True
+            self._animate()
+
+        def stop(self):
+            self._animating = False
+
+        def _animate(self):
+            if not self._animating:
+                return
+            self.delete("all")
+            self._draw_round(0, 0, self._width, self._height, self._radius, self._bg_color)
+            seg_w = int(self._width * 0.28)
+            self._anim_pos = (self._anim_pos + 10) % (self._width + seg_w)
+            start_x = self._anim_pos - seg_w
+            end_x = start_x + seg_w
+            draw_start = max(0, start_x)
+            draw_end = min(self._width, end_x)
+            if draw_end > 0:
+                if draw_end - draw_start < self._height:
+                    self.create_oval(draw_start, 0, draw_end, self._height, fill=self._fg_color, outline="")
+                else:
+                    self._draw_round(draw_start, 0, draw_end, self._height, self._radius, self._fg_color)
+            self.after(self._anim_interval, self._animate)
+
     q = queue.Queue()
     worker_running = {"value": False}
 
@@ -403,8 +492,8 @@ def run_bootstrap_ui():
 
     root = tk.Tk()
     root.title("Transcript Processor — Setup")
-    root.geometry("520x290")
-    root.minsize(520, 290)
+    root.geometry("520x360")
+    root.minsize(520, 360)
     root.configure(bg="#f5f5f7")
 
     status_var = tk.StringVar(value="Preparing...")
@@ -417,8 +506,18 @@ def run_bootstrap_ui():
     )
     status.pack(pady=(14, 8))
 
-    prog = ttk.Progressbar(root, mode="determinate", length=420)
-    prog.pack(pady=10)
+    prog = RoundedProgress(root, width=420, height=14, radius=7)
+    prog.pack(pady=(4, 12))
+
+    phase_var = tk.StringVar(value="")
+    phase = tk.Label(
+        root,
+        textvariable=phase_var,
+        font=("SF Pro Display", 12),
+        bg="#f5f5f7",
+        fg="#555",
+    )
+    phase.pack(pady=(0, 6))
 
     detail_var = tk.StringVar(value="")
     detail = tk.Label(
@@ -428,7 +527,7 @@ def run_bootstrap_ui():
         bg="#f5f5f7",
         fg="#555",
     )
-    detail.pack(pady=6)
+    detail.pack(pady=(0, 4))
 
     def ensure_api_keys() -> bool:
         cfg = _load_credentials()
@@ -447,7 +546,8 @@ def run_bootstrap_ui():
             dialog,
             text="Anthropic API key not found.",
             font=("SF Pro Display", 15, "bold"),
-            bg="#f5f5f7"
+            bg="#f5f5f7",
+            fg="#1d1d1f"
         ).pack(pady=(18, 6))
 
         tk.Label(
@@ -570,31 +670,38 @@ def run_bootstrap_ui():
                 elif msg[0] == "progress":
                     downloaded, total = msg[1], msg[2]
                     if total:
-                        prog["value"] = (downloaded / total) * 100
+                        prog.stop()
+                        prog.set((downloaded / total) * 100)
+                        phase_var.set("Downloading runtime...")
                         detail_var.set(f"{downloaded // (1024*1024)} MB / {total // (1024*1024)} MB")
                     else:
-                        prog["mode"] = "indeterminate"
-                        prog.start(10)
+                        phase_var.set("Downloading runtime...")
+                        detail_var.set("")
+                        prog.start(20)
                 elif msg[0] == "install_step":
                     step, total, message = msg[1], msg[2], msg[3]
                     prog.stop()
-                    prog["mode"] = "determinate"
-                    prog["value"] = (step / total) * 100 if total else 0
-                    detail_var.set(message)
+                    prog.set((step / total) * 100 if total else 0)
+                    phase_var.set(message)
+                    detail_var.set("")
                 elif msg[0] == "system_step":
                     step, total, message = msg[1], msg[2], msg[3]
                     prog.stop()
-                    prog["mode"] = "determinate"
-                    prog["value"] = (step / total) * 100 if total else 0
-                    detail_var.set(message)
+                    prog.set((step / total) * 100 if total else 0)
+                    phase_var.set(message)
+                    detail_var.set("")
                 elif msg[0] == "brew_missing":
+                    _show_retry(True)
+                    _show_brew(True)
                     retry_btn.set_enabled(True)
                     brew_btn.set_enabled(True)
                 elif msg[0] == "launch":
                     prog.stop()
                     if not ensure_api_keys():
                         status_var.set("Setup complete, but API key missing.")
+                        phase_var.set("")
                         detail_var.set(f"Anthropic API key required.\n\nLog: {LOG_FILE}")
+                        _show_retry(True)
                         retry_btn.set_enabled(True)
                         continue
                     launched, reason = _launch_runtime_app()
@@ -611,6 +718,7 @@ def run_bootstrap_ui():
                             f"Log: {LOG_FILE}\n\n"
                             f"Reason: {reason}"
                         )
+                        _show_retry(True)
                         retry_btn.set_enabled(True)
                         messagebox.showinfo(
                             "Setup Complete",
@@ -618,7 +726,9 @@ def run_bootstrap_ui():
                         )
                 elif msg[0] == "error":
                     status_var.set("Setup failed.")
+                    phase_var.set("")
                     detail_var.set(f"{msg[1]}\n\nLog: {LOG_FILE}")
+                    _show_retry(True)
                     retry_btn.set_enabled(True)
         except queue.Empty:
             pass
@@ -627,10 +737,13 @@ def run_bootstrap_ui():
     def start_worker():
         if worker_running["value"]:
             return
+        _show_retry(False)
+        _show_brew(False)
         retry_btn.set_enabled(False)
+        brew_btn.set_enabled(False)
+        phase_var.set("")
         detail_var.set("")
-        prog["value"] = 0
-        prog["mode"] = "determinate"
+        prog.set(0)
         threading.Thread(target=worker, daemon=True).start()
 
     def open_log_dir():
@@ -678,13 +791,31 @@ def run_bootstrap_ui():
         btn_frame,
         text="Open Log Folder",
         command=open_log_dir,
-        bg_color="#007AFF",
-        text_color="white",
+        bg_color="#E0E0E0",
+        text_color="#1d1d1f",
+        hover_color="#d5d5d5",
         font_size=12,
         padx=26,
         pady=8,
     )
     log_btn.pack(pady=4)
+
+    def _show_retry(show: bool):
+        if show:
+            if not retry_btn.winfo_ismapped():
+                retry_btn.pack(pady=4)
+        elif retry_btn.winfo_ismapped():
+            retry_btn.pack_forget()
+
+    def _show_brew(show: bool):
+        if show:
+            if not brew_btn.winfo_ismapped():
+                brew_btn.pack(pady=4)
+        elif brew_btn.winfo_ismapped():
+            brew_btn.pack_forget()
+
+    _show_retry(False)
+    _show_brew(False)
 
     start_worker()
     root.after(200, poll)
