@@ -4,11 +4,13 @@ import os
 import queue
 import threading
 import urllib.request
+import urllib.error
 import tarfile
 import subprocess
 import traceback
 import json
 import shutil
+import ssl
 from datetime import datetime
 from pathlib import Path
 
@@ -34,20 +36,65 @@ def log(message: str) -> None:
         pass
 
 
+def _resolve_ca_bundle() -> str | None:
+    """Pick a CA bundle that works in portable/embedded Python contexts."""
+    env_override = os.environ.get("TPP_CA_BUNDLE") or os.environ.get("SSL_CERT_FILE")
+    if env_override and Path(env_override).exists():
+        return env_override
+
+    for candidate in ("/etc/ssl/cert.pem", "/private/etc/ssl/cert.pem"):
+        if Path(candidate).exists():
+            return candidate
+
+    try:
+        import certifi  # type: ignore
+
+        bundle = certifi.where()
+        if bundle and Path(bundle).exists():
+            return bundle
+    except Exception:
+        pass
+    return None
+
+
+def _download_with_curl(url: str, dest: Path, progress_cb=None) -> None:
+    if progress_cb:
+        progress_cb(0, None)
+    cmd = ["/usr/bin/curl", "-L", "--fail", "--silent", "--show-error", "--output", str(dest), url]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"curl download failed: {result.stderr.strip() or result.stdout.strip()}")
+    if progress_cb:
+        size = dest.stat().st_size if dest.exists() else 0
+        progress_cb(size, size)
+
+
 def _download_with_progress(url: str, dest: Path, progress_cb):
     req = urllib.request.Request(url, headers={"User-Agent": "TranscriptProcessorBootstrap/1.0"})
-    with urllib.request.urlopen(req) as resp, open(dest, "wb") as f:
-        total = resp.headers.get("Content-Length")
-        total = int(total) if total is not None else None
-        downloaded = 0
-        while True:
-            chunk = resp.read(1024 * 512)
-            if not chunk:
-                break
-            f.write(chunk)
-            downloaded += len(chunk)
-            if progress_cb:
-                progress_cb(downloaded, total)
+    cafile = _resolve_ca_bundle()
+    if cafile:
+        log(f"Using CA bundle: {cafile}")
+    ctx = ssl.create_default_context(cafile=cafile) if cafile else ssl.create_default_context()
+    try:
+        with urllib.request.urlopen(req, context=ctx, timeout=60) as resp, open(dest, "wb") as f:
+            total = resp.headers.get("Content-Length")
+            total = int(total) if total is not None else None
+            downloaded = 0
+            while True:
+                chunk = resp.read(1024 * 512)
+                if not chunk:
+                    break
+                f.write(chunk)
+                downloaded += len(chunk)
+                if progress_cb:
+                    progress_cb(downloaded, total)
+    except urllib.error.URLError as exc:
+        err_txt = str(exc)
+        if "CERTIFICATE_VERIFY_FAILED" in err_txt.upper():
+            log("Embedded Python TLS verification failed; retrying with system curl.")
+            _download_with_curl(url, dest, progress_cb)
+            return
+        raise
 
 
 def _extract_tar(tar_path: Path, dest_dir: Path):
