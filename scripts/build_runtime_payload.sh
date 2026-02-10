@@ -19,9 +19,10 @@ mkdir -p "$RUNTIME_DIR"
 # Resolve app source root in a portable way when env vars are not provided.
 if [ -z "$APP_SRC_ROOT" ]; then
   for candidate in \
+    "$PROJECT_ROOT" \
     "$PROJECT_ROOT/../TranscriptProcessor" \
     "$PROJECT_ROOT/../TranscriptProcessor-portable" \
-    "$PROJECT_ROOT"
+    "$PWD"
   do
     if [ -f "$candidate/src/mac_app_modern.py" ]; then
       APP_SRC_ROOT="$candidate"
@@ -43,6 +44,9 @@ if [ -z "$REQS_PATH" ]; then
     REQS_PATH="$PROJECT_ROOT/requirements.txt"
   fi
 fi
+
+echo "Using app source root: $APP_SRC_ROOT"
+echo "Using requirements file: $REQS_PATH"
 
 # 1) Download portable Python (python-build-standalone)
 if [ -z "$PYBS_URL" ]; then

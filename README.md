@@ -11,6 +11,7 @@ Full install guide: `INSTALL.md`
 
 ## What This Repo Contains
 - A lightweight `.app` bundle that shows a setup UI and installs a runtime.
+- The runtime app source in `src/` and assets in `assets/`, versioned in this repository.
 - A runtime payload build script that packages a portable Python runtime + app code.
 - Scripts to build the app and publish the payload to GitHub Releases.
 
@@ -30,6 +31,8 @@ Full install guide: `INSTALL.md`
 ```bash
 bash "./scripts/build_runtime_payload.sh"
 ```
+The script uses this repository's `src/` and `requirements.txt` by default.
+You can override with `TPP_APP_SRC_ROOT` and `TPP_REQUIREMENTS` if needed.
 
 ### Build the macOS app
 ```bash

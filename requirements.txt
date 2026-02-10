@@ -1,0 +1,7 @@
+anthropic>=0.39.0
+requests>=2.31.0
+tkinterdnd2>=0.3.0
+Pillow>=10.0.0
+weasyprint>=60.0
+parakeet-mlx>=0.1.0
+openai>=1.0.0
