@@ -60,8 +60,8 @@ import json
 import threading
 import time
 from huggingface_hub import HfApi, hf_hub_download
-from tqdm.auto import tqdm
 import os
+from pathlib import Path
 
 repo_id = "mlx-community/parakeet-tdt-0.6b-v3"
 cache_dir = os.environ.get("HUGGINGFACE_HUB_CACHE") or os.environ.get("HF_HOME")
@@ -71,40 +71,30 @@ info = api.model_info(repo_id)
 siblings = [s for s in info.siblings if s.rfilename and not s.rfilename.endswith(".gitattributes")]
 siblings = sorted(siblings, key=lambda s: s.rfilename)
 
-class EmitTqdm(tqdm):
-    current_file = ""
-    current_index = 0
-    total_files = 0
-    file_size = 0
+size_map = {}
+for item in api.list_repo_tree(repo_id, recursive=False, expand=True):
+    if getattr(item, "path", None):
+        size_map[item.path] = int(getattr(item, "size", 0) or 0)
 
-    def __init__(self, *args, **kwargs):
-        kwargs["disable"] = True
-        super().__init__(*args, **kwargs)
-        self.last_pct = -1
+blob_dir = Path(cache_dir) / ("models--" + repo_id.replace("/", "--")) / "blobs"
 
-    def update(self, n=1):
-        out = super().update(n)
-        total = int(self.total or self.file_size or 0)
-        done = int(self.n)
-        pct = int((done / total) * 100) if total > 0 else 0
-        if pct != self.last_pct:
-            print("TPP_FILE_PROGRESS:" + json.dumps({
-                "index": self.current_index,
-                "total_files": self.total_files,
-                "file": self.current_file,
-                "done": done,
-                "total": total,
-                "pct": pct
-            }), flush=True)
-            self.last_pct = pct
-        return out
+def current_partial_bytes() -> int:
+    if not blob_dir.exists():
+        return 0
+    sizes = []
+    for p in blob_dir.glob("*.incomplete"):
+        try:
+            sizes.append(p.stat().st_size)
+        except OSError:
+            pass
+    return max(sizes) if sizes else 0
 
 total_size = sum((s.size or 0) for s in siblings)
 total_units = total_size if total_size > 0 else len(siblings)
 downloaded = 0
 
 for idx, s in enumerate(siblings, 1):
-    file_size = int(s.size or 0)
+    file_size = int(size_map.get(s.rfilename, s.size or 0))
     print("TPP_FILE_START:" + json.dumps({
         "index": idx,
         "total_files": len(siblings),
@@ -119,15 +109,31 @@ for idx, s in enumerate(siblings, 1):
 
     stop_hb = threading.Event()
     started_at = time.time()
+    emitted_done = {"value": -1}
 
     def heartbeat():
         while not stop_hb.wait(1.0):
+            done = current_partial_bytes()
+            total = file_size
+            pct = int((done / total) * 100) if total > 0 else 0
+            if done != emitted_done["value"]:
+                emitted_done["value"] = done
+                print("TPP_FILE_PROGRESS:" + json.dumps({
+                    "index": idx,
+                    "total_files": len(siblings),
+                    "file": s.rfilename,
+                    "done": done,
+                    "total": total,
+                    "pct": pct
+                }), flush=True)
             print("TPP_FILE_HEARTBEAT:" + json.dumps({
                 "index": idx,
                 "total_files": len(siblings),
                 "file": s.rfilename,
                 "elapsed": int(time.time() - started_at),
-                "size": file_size
+                "size": file_size,
+                "done": done,
+                "total": total
             }), flush=True)
 
     hb = threading.Thread(target=heartbeat, daemon=True)
@@ -137,7 +143,6 @@ for idx, s in enumerate(siblings, 1):
             repo_id=repo_id,
             filename=s.rfilename,
             cache_dir=cache_dir,
-            tqdm_class=EmitTqdm,
         )
     finally:
         stop_hb.set()
@@ -147,13 +152,13 @@ for idx, s in enumerate(siblings, 1):
         "index": idx,
         "total_files": len(siblings),
         "file": s.rfilename,
-        "done": file_size,
-        "total": file_size,
+        "done": file_size or emitted_done["value"],
+        "total": file_size or emitted_done["value"],
         "pct": 100
     }), flush=True)
 
     if total_size > 0:
-        downloaded += file_size
+        downloaded += file_size or emitted_done["value"]
         units_done = downloaded
     else:
         units_done = idx

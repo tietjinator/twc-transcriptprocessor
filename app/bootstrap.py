@@ -790,10 +790,16 @@ def run_bootstrap_ui():
                     elif kind == "heartbeat":
                         elapsed = int(payload.get("elapsed") or 0)
                         file_size = int(payload.get("size") or 0)
+                        done = int(payload.get("done") or 0)
+                        total = int(payload.get("total") or file_size)
                         if active_model_pct["value"] == 0:
                             prog.start(24)
                             phase_var.set(f"Downloading Parakeet model ({idx}/{total_files})")
-                            if file_size > 0:
+                            if total > 0:
+                                detail_var.set(
+                                    f"{file_name} • connecting... • {_format_bytes(done)} / {_format_bytes(total)} • {elapsed}s elapsed"
+                                )
+                            elif file_size > 0:
                                 detail_var.set(
                                     f"{file_name} • connecting... • 0 B / {_format_bytes(file_size)} • {elapsed}s elapsed"
                                 )
