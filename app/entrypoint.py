@@ -32,6 +32,9 @@ def launch_real_app():
         env["TCL_LIBRARY"] = str(tcl_dir)
     if tk_dir.exists():
         env["TK_LIBRARY"] = str(tk_dir)
+    fallback_libs = ["/opt/homebrew/lib", "/usr/local/lib"]
+    existing = env.get("DYLD_FALLBACK_LIBRARY_PATH", "")
+    env["DYLD_FALLBACK_LIBRARY_PATH"] = ":".join(fallback_libs + ([existing] if existing else []))
 
     subprocess.Popen([str(RUNTIME_VENV_PY), str(app_entry)], cwd=str(RUNTIME_DIR / "app"), env=env)
     return 0

@@ -7,6 +7,8 @@ import urllib.request
 import tarfile
 import subprocess
 import traceback
+import json
+import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -17,6 +19,9 @@ RUNTIME_APP_ENTRY = RUNTIME_DIR / "app" / "src" / "mac_app_modern.py"
 
 LOG_DIR = Path.home() / "Library" / "Logs" / "Transcript Processor"
 LOG_FILE = LOG_DIR / "bootstrap.log"
+HOME_CONFIG_FILE = Path.home() / "TranscriptProcessor" / "config" / "credentials.json"
+
+BREW_PACKAGES = ["ffmpeg", "pango", "cairo", "gdk-pixbuf", "libffi", "glib"]
 
 
 def log(message: str) -> None:
@@ -73,6 +78,95 @@ def _chmod_runtime_bin() -> None:
         for p in bin_dir.iterdir():
             if p.is_file():
                 p.chmod(0o755)
+    except Exception:
+        pass
+
+
+def _find_brew() -> str | None:
+    candidates = [
+        shutil.which("brew"),
+        "/opt/homebrew/bin/brew",
+        "/usr/local/bin/brew",
+    ]
+    for c in candidates:
+        if c and Path(c).exists():
+            return c
+    return None
+
+
+def _open_terminal_with_command(command: str) -> None:
+    try:
+        osa = (
+            'tell application "Terminal"\n'
+            f'  do script "{command.replace(\'"\', \'\\\"\')}"\n'
+            "  activate\n"
+            "end tell"
+        )
+        subprocess.run(["/usr/bin/osascript", "-e", osa], check=False)
+    except Exception:
+        pass
+
+
+def _ensure_system_deps(progress_cb=None):
+    brew = _find_brew()
+    if not brew:
+        raise RuntimeError("BREW_MISSING:Homebrew is required to install system dependencies.")
+
+    env = os.environ.copy()
+    env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + env.get("PATH", "")
+
+    missing = []
+    for pkg in BREW_PACKAGES:
+        try:
+            result = subprocess.run([brew, "list", pkg], env=env, capture_output=True, text=True)
+            if result.returncode != 0:
+                missing.append(pkg)
+        except Exception:
+            missing.append(pkg)
+
+    if not missing:
+        return
+
+    total = len(missing)
+    for idx, pkg in enumerate(missing, start=1):
+        if progress_cb:
+            progress_cb(idx, total, f"Installing {pkg}...")
+        proc = subprocess.Popen(
+            [brew, "install", pkg],
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        if proc.stdout:
+            for line in proc.stdout:
+                log(line.rstrip())
+        ret = proc.wait()
+        if ret != 0:
+            raise RuntimeError(f"Failed to install {pkg} via Homebrew.")
+
+
+def _load_credentials() -> dict:
+    if HOME_CONFIG_FILE.exists():
+        try:
+            with open(HOME_CONFIG_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+
+def _save_credentials(anthropic_key: str, openai_key: str | None) -> None:
+    config = _load_credentials()
+    config["anthropic_api_key"] = anthropic_key
+    if openai_key:
+        config["openai_api_key"] = openai_key
+    HOME_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(HOME_CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(config, f, indent=2)
+    try:
+        HOME_CONFIG_FILE.chmod(0o600)
     except Exception:
         pass
 
@@ -137,6 +231,9 @@ def _launch_runtime_app() -> tuple[bool, str]:
             env["TCL_LIBRARY"] = str(tcl_dir)
         if tk_dir.exists():
             env["TK_LIBRARY"] = str(tk_dir)
+        fallback_libs = ["/opt/homebrew/lib", "/usr/local/lib"]
+        existing = env.get("DYLD_FALLBACK_LIBRARY_PATH", "")
+        env["DYLD_FALLBACK_LIBRARY_PATH"] = ":".join(fallback_libs + ([existing] if existing else []))
 
         subprocess.Popen([str(py), str(RUNTIME_APP_ENTRY)], cwd=str(RUNTIME_DIR / "app"), env=env)
         return True, ""
@@ -175,13 +272,21 @@ def run_bootstrap_ui():
             def install_cb(step, total, message):
                 q.put(("install_step", step, total, message))
             _install_runtime(install_cb)
+            q.put(("status", "Installing system dependencies..."))
+            def sys_cb(step, total, message):
+                q.put(("system_step", step, total, message))
+            _ensure_system_deps(sys_cb)
             q.put(("status", "Install complete. Launching app..."))
             q.put(("launch",))
         except Exception as e:
             log("Setup failed.")
             log(str(e))
             log(traceback.format_exc())
-            q.put(("error", str(e)))
+            msg = str(e)
+            if msg.startswith("BREW_MISSING:"):
+                q.put(("brew_missing",))
+                msg = msg.split("BREW_MISSING:", 1)[1]
+            q.put(("error", msg))
         finally:
             worker_running["value"] = False
 
@@ -199,6 +304,116 @@ def run_bootstrap_ui():
     detail_var = tk.StringVar(value="")
     detail = ttk.Label(root, textvariable=detail_var)
     detail.pack(pady=6)
+
+    def ensure_api_keys() -> bool:
+        cfg = _load_credentials()
+        anthropic_key = (cfg.get("anthropic_api_key") or "").strip()
+        if anthropic_key.startswith("sk-ant-"):
+            return True
+
+        dialog = tk.Toplevel(root)
+        dialog.title("API Keys Required")
+        dialog.geometry("520x300")
+        dialog.configure(bg="#f5f5f7")
+        dialog.transient(root)
+        dialog.grab_set()
+
+        tk.Label(
+            dialog,
+            text="Anthropic API key not found.",
+            font=("SF Pro Display", 15, "bold"),
+            bg="#f5f5f7"
+        ).pack(pady=(18, 6))
+
+        tk.Label(
+            dialog,
+            text="Enter your keys below to continue.",
+            font=("SF Pro Display", 11),
+            bg="#f5f5f7",
+            fg="#555"
+        ).pack(pady=(0, 12))
+
+        form = tk.Frame(dialog, bg="#f5f5f7")
+        form.pack(padx=20, pady=6, fill=tk.X)
+
+        tk.Label(form, text="Anthropic API Key", font=("SF Pro Display", 11), bg="#f5f5f7").grid(row=0, column=0, sticky="w", pady=4)
+        anthropic_entry = tk.Entry(form, width=48, show="*", font=("SF Pro Display", 11))
+        anthropic_entry.grid(row=1, column=0, sticky="we", pady=(0, 8))
+
+        tk.Label(form, text="OpenAI API Key (optional)", font=("SF Pro Display", 11), bg="#f5f5f7").grid(row=2, column=0, sticky="w", pady=4)
+        openai_entry = tk.Entry(form, width=48, show="*", font=("SF Pro Display", 11))
+        openai_entry.grid(row=3, column=0, sticky="we")
+
+        form.columnconfigure(0, weight=1)
+
+        result = {"saved": False}
+
+        def on_save():
+            anthropic_val = anthropic_entry.get().strip()
+            openai_val = openai_entry.get().strip()
+
+            if not anthropic_val:
+                messagebox.showerror("API Key Required", "Anthropic API key is required.", parent=dialog)
+                return
+
+            if not anthropic_val.startswith("sk-ant-"):
+                proceed = messagebox.askyesno(
+                    "Confirm Key",
+                    "Anthropic key does not start with 'sk-ant-'. Continue anyway?",
+                    parent=dialog
+                )
+                if not proceed:
+                    return
+
+            if openai_val and not openai_val.startswith("sk-"):
+                proceed = messagebox.askyesno(
+                    "Confirm Key",
+                    "OpenAI key does not start with 'sk-'. Continue anyway?",
+                    parent=dialog
+                )
+                if not proceed:
+                    return
+
+            _save_credentials(anthropic_val, openai_val or None)
+            result["saved"] = True
+            dialog.destroy()
+
+        def on_cancel():
+            dialog.destroy()
+
+        btn_frame = tk.Frame(dialog, bg="#f5f5f7")
+        btn_frame.pack(pady=18)
+
+        save_btn = tk.Button(
+            btn_frame,
+            text="Save",
+            command=on_save,
+            font=("SF Pro Display", 12),
+            bg="#007AFF",
+            fg="white",
+            padx=24,
+            pady=8,
+            relief=tk.FLAT,
+            cursor="hand2"
+        )
+        save_btn.pack(side=tk.LEFT, padx=6)
+
+        cancel_btn = tk.Button(
+            btn_frame,
+            text="Cancel",
+            command=on_cancel,
+            font=("SF Pro Display", 12),
+            bg="#E0E0E0",
+            fg="#333",
+            padx=24,
+            pady=8,
+            relief=tk.FLAT,
+            cursor="hand2"
+        )
+        cancel_btn.pack(side=tk.LEFT, padx=6)
+
+        dialog.wait_window()
+        return result["saved"]
 
     def poll():
         try:
@@ -220,8 +435,22 @@ def run_bootstrap_ui():
                     prog["mode"] = "determinate"
                     prog["value"] = (step / total) * 100 if total else 0
                     detail_var.set(message)
+                elif msg[0] == "system_step":
+                    step, total, message = msg[1], msg[2], msg[3]
+                    prog.stop()
+                    prog["mode"] = "determinate"
+                    prog["value"] = (step / total) * 100 if total else 0
+                    detail_var.set(message)
+                elif msg[0] == "brew_missing":
+                    retry_btn.config(state="normal")
+                    brew_btn.config(state="normal")
                 elif msg[0] == "launch":
                     prog.stop()
+                    if not ensure_api_keys():
+                        status_var.set("Setup complete, but API key missing.")
+                        detail_var.set(f"Anthropic API key required.\n\nLog: {LOG_FILE}")
+                        retry_btn.config(state="normal")
+                        continue
                     launched, reason = _launch_runtime_app()
                     if launched:
                         status_var.set("Launching app...")
@@ -264,8 +493,15 @@ def run_bootstrap_ui():
         except Exception:
             pass
 
+    def install_homebrew():
+        cmd = '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+        _open_terminal_with_command(cmd)
+
     retry_btn = ttk.Button(root, text="Retry", command=start_worker, state="disabled")
     retry_btn.pack(pady=4)
+
+    brew_btn = ttk.Button(root, text="Install Homebrew", command=install_homebrew, state="disabled")
+    brew_btn.pack(pady=2)
 
     log_btn = ttk.Button(root, text="Open Log Folder", command=open_log_dir)
     log_btn.pack(pady=2)
@@ -293,6 +529,14 @@ def run_bootstrap_cli():
     _chmod_runtime_bin()
     print("Installing dependencies...")
     _install_runtime()
+    print("Installing system dependencies...")
+    _ensure_system_deps()
+    cfg = _load_credentials()
+    if not (cfg.get("anthropic_api_key") or "").startswith("sk-ant-"):
+        key = input("Enter your Anthropic API key (sk-ant-...): ").strip()
+        if key:
+            openai = input("Enter your OpenAI API key (optional, sk-...): ").strip()
+            _save_credentials(key, openai or None)
     print("Launching app...")
     launched, reason = _launch_runtime_app()
     if not launched:
