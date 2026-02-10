@@ -102,11 +102,6 @@ for idx, s in enumerate(siblings, 1):
         "size": file_size
     }), flush=True)
 
-    EmitTqdm.current_file = s.rfilename
-    EmitTqdm.current_index = idx
-    EmitTqdm.total_files = len(siblings)
-    EmitTqdm.file_size = file_size
-
     stop_hb = threading.Event()
     started_at = time.time()
     emitted_done = {"value": -1}
