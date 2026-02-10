@@ -130,6 +130,14 @@ def _launch_runtime_app() -> tuple[bool, str]:
         env = os.environ.copy()
         app_src = str(RUNTIME_DIR / "app" / "src")
         env["PYTHONPATH"] = app_src + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+
+        tcl_dir = RUNTIME_DIR / "python" / "lib" / "tcl9.0"
+        tk_dir = RUNTIME_DIR / "python" / "lib" / "tk9.0"
+        if tcl_dir.exists():
+            env["TCL_LIBRARY"] = str(tcl_dir)
+        if tk_dir.exists():
+            env["TK_LIBRARY"] = str(tk_dir)
+
         subprocess.Popen([str(py), str(RUNTIME_APP_ENTRY)], cwd=str(RUNTIME_DIR / "app"), env=env)
         return True, ""
     except Exception as exc:

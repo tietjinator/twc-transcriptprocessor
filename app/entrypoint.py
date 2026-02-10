@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import subprocess
+import os
 
 try:
     from app.runtime import runtime_exists, RUNTIME_DIR, RUNTIME_VENV_PY
@@ -21,7 +22,18 @@ def launch_real_app():
         print("Runtime app entry not found. Please reinstall runtime.")
         return 1
 
-    subprocess.Popen([str(RUNTIME_VENV_PY), str(app_entry)])
+    env = os.environ.copy()
+    app_src = str(RUNTIME_DIR / "app" / "src")
+    env["PYTHONPATH"] = app_src + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+
+    tcl_dir = RUNTIME_DIR / "python" / "lib" / "tcl9.0"
+    tk_dir = RUNTIME_DIR / "python" / "lib" / "tk9.0"
+    if tcl_dir.exists():
+        env["TCL_LIBRARY"] = str(tcl_dir)
+    if tk_dir.exists():
+        env["TK_LIBRARY"] = str(tk_dir)
+
+    subprocess.Popen([str(RUNTIME_VENV_PY), str(app_entry)], cwd=str(RUNTIME_DIR / "app"), env=env)
     return 0
 
 
