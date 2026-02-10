@@ -11,6 +11,7 @@ import traceback
 import json
 import shutil
 import ssl
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -318,6 +319,32 @@ def _launch_runtime_app() -> tuple[bool, str]:
         return True, ""
     except Exception as exc:
         return False, f"Failed to launch app: {exc}"
+
+
+def _restart_transcript_processor() -> tuple[bool, str]:
+    """Relaunch the host app bundle; fallback to direct runtime launch."""
+    try:
+        exe = Path(sys.executable).resolve()
+    except Exception:
+        exe = Path(sys.executable)
+
+    bundle = None
+    for candidate in [exe, *exe.parents]:
+        if candidate.suffix == ".app":
+            bundle = candidate
+            break
+
+    if bundle and bundle.exists():
+        try:
+            subprocess.Popen(["/usr/bin/open", "-n", str(bundle)])
+            return True, ""
+        except Exception as exc:
+            return False, f"Failed to relaunch app bundle: {exc}"
+
+    launched, reason = _launch_runtime_app()
+    if launched:
+        return True, ""
+    return False, reason or "Unable to relaunch app."
 
 
 def run_bootstrap_ui():
@@ -893,26 +920,13 @@ def run_bootstrap_ui():
                         _show_retry(True)
                         retry_btn.set_enabled(True)
                         continue
-                    launched, reason = _launch_runtime_app()
-                    if launched:
-                        status_var.set("Launching app...")
-                        log("Launch succeeded.")
-                        root.after(300, root.destroy)
-                    else:
-                        status_var.set("Setup complete, but launch failed.")
-                        log(f"Launch failed: {reason}")
-                        detail_var.set(
-                            "Could not start the app automatically.\n"
-                            "Please reopen the app.\n\n"
-                            f"Log: {LOG_FILE}\n\n"
-                            f"Reason: {reason}"
-                        )
-                        _show_retry(True)
-                        retry_btn.set_enabled(True)
-                        messagebox.showinfo(
-                            "Setup Complete",
-                            "Dependencies installed successfully.\n\nPlease reopen the app.",
-                        )
+                    status_var.set("Setup complete.")
+                    phase_var.set("Dependencies installed successfully.")
+                    detail_var.set("Click 'Restart Transcript Processor' to finish setup.")
+                    _show_retry(False)
+                    _show_brew(False)
+                    _show_restart(True)
+                    restart_btn.set_enabled(True)
                 elif msg[0] == "error":
                     status_var.set("Setup failed.")
                     active_model_file["value"] = None
@@ -930,8 +944,10 @@ def run_bootstrap_ui():
             return
         _show_retry(False)
         _show_brew(False)
+        _show_restart(False)
         retry_btn.set_enabled(False)
         brew_btn.set_enabled(False)
+        restart_btn.set_enabled(False)
         phase_var.set("")
         detail_var.set("")
         active_model_file["value"] = None
@@ -953,6 +969,23 @@ def run_bootstrap_ui():
             'echo "When Homebrew finishes, return to Transcript Processor and click Retry."'
         )
         _open_terminal_with_command(cmd)
+
+    def restart_transcript_processor():
+        restart_btn.set_enabled(False)
+        launched, reason = _restart_transcript_processor()
+        if launched:
+            log("Relaunch requested by user.")
+            root.after(150, root.destroy)
+            return
+        status_var.set("Setup complete, restart failed.")
+        detail_var.set(
+            "Could not relaunch automatically.\n"
+            "Please close this window and reopen Transcript Processor.\n\n"
+            f"Log: {LOG_FILE}\n\n"
+            f"Reason: {reason}"
+        )
+        _show_retry(True)
+        retry_btn.set_enabled(True)
 
     btn_frame = tk.Frame(root, bg="#f5f5f7")
     btn_frame.pack(pady=(2, 10))
@@ -985,6 +1018,20 @@ def run_bootstrap_ui():
     brew_btn.pack(pady=4)
     brew_btn.set_enabled(False)
 
+    restart_btn = ModernButton(
+        btn_frame,
+        text="Restart Transcript Processor",
+        command=restart_transcript_processor,
+        bg_color="#007AFF",
+        text_color="white",
+        hover_color="#006CE0",
+        font_size=12,
+        padx=26,
+        pady=8,
+    )
+    restart_btn.pack(pady=4)
+    restart_btn.set_enabled(False)
+
     log_btn = ModernButton(
         btn_frame,
         text="Open Log Folder",
@@ -1012,8 +1059,16 @@ def run_bootstrap_ui():
         elif brew_btn.winfo_ismapped():
             brew_btn.pack_forget()
 
+    def _show_restart(show: bool):
+        if show:
+            if not restart_btn.winfo_ismapped():
+                restart_btn.pack(pady=4)
+        elif restart_btn.winfo_ismapped():
+            restart_btn.pack_forget()
+
     _show_retry(False)
     _show_brew(False)
+    _show_restart(False)
 
     start_worker()
     root.after(200, poll)

@@ -14,7 +14,11 @@ class MediaConverter:
 
     def __init__(self):
         self.temp_dir = TEMP_DIR
-        self.ffmpeg_path = self._find_ffmpeg()
+        # Don't hard-fail app startup if FFmpeg is missing; service checks handle readiness.
+        try:
+            self.ffmpeg_path = self._find_ffmpeg()
+        except RuntimeError:
+            self.ffmpeg_path = None
         self.ffprobe_path = self._find_ffprobe()
 
     def _find_ffmpeg(self) -> str:
@@ -66,6 +70,9 @@ class MediaConverter:
         """
         if progress_callback:
             progress_callback(f"Converting {input_file.name} to WAV...")
+
+        if not self.ffmpeg_path:
+            raise RuntimeError("FFmpeg not found. Please run setup to install FFmpeg.")
 
         # Create output filename
         output_file = self.temp_dir / f"{input_file.stem}_converted.wav"
