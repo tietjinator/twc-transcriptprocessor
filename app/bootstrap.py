@@ -714,9 +714,9 @@ def run_bootstrap_ui():
                     prog.set(pct)
                     phase_var.set("Downloading Parakeet model...")
                     if total >= 1024 * 1024:
-                        detail_var.set(f"{done // (1024*1024)} MB / {total // (1024*1024)} MB")
+                        detail_var.set(f"{pct}% • {done // (1024*1024)} MB / {total // (1024*1024)} MB")
                     else:
-                        detail_var.set(f"{done} / {total} files")
+                        detail_var.set(f"{pct}% • {done} / {total} files")
                 elif msg[0] == "brew_missing":
                     _show_retry(True)
                     _show_brew(True)
