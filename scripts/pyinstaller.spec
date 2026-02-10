@@ -10,10 +10,14 @@ block_cipher = None
 
 a = Analysis(
     ["../app/entrypoint.py"],
-    pathex=["../app"],
+    pathex=[".."],
     binaries=[],
     datas=[],
-    hiddenimports=hidden_imports,
+    hiddenimports=hidden_imports + [
+        "app.bootstrap",
+        "app.runtime",
+        "app.runtime_installer",
+    ],
     hookspath=[],
     runtime_hooks=[],
     excludes=[],
