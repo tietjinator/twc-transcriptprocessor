@@ -57,6 +57,8 @@ def main() -> int:
             "-c",
             """
 import json
+import threading
+import time
 from huggingface_hub import HfApi, hf_hub_download
 from tqdm.auto import tqdm
 import os
@@ -115,13 +117,31 @@ for idx, s in enumerate(siblings, 1):
     EmitTqdm.total_files = len(siblings)
     EmitTqdm.file_size = file_size
 
-    hf_hub_download(
-        repo_id=repo_id,
-        filename=s.rfilename,
-        cache_dir=cache_dir,
-        resume_download=True,
-        tqdm_class=EmitTqdm,
-    )
+    stop_hb = threading.Event()
+    started_at = time.time()
+
+    def heartbeat():
+        while not stop_hb.wait(1.0):
+            print("TPP_FILE_HEARTBEAT:" + json.dumps({
+                "index": idx,
+                "total_files": len(siblings),
+                "file": s.rfilename,
+                "elapsed": int(time.time() - started_at),
+                "size": file_size
+            }), flush=True)
+
+    hb = threading.Thread(target=heartbeat, daemon=True)
+    hb.start()
+    try:
+        hf_hub_download(
+            repo_id=repo_id,
+            filename=s.rfilename,
+            cache_dir=cache_dir,
+            tqdm_class=EmitTqdm,
+        )
+    finally:
+        stop_hb.set()
+        hb.join(timeout=0.2)
 
     print("TPP_FILE_PROGRESS:" + json.dumps({
         "index": idx,

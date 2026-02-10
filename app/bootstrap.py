@@ -224,6 +224,12 @@ def _install_runtime(progress_cb=None, download_cb=None, file_download_cb=None):
                         file_download_cb("progress", json.loads(payload))
                     except Exception:
                         pass
+                if line.startswith("TPP_FILE_HEARTBEAT:") and file_download_cb:
+                    try:
+                        payload = line.split("TPP_FILE_HEARTBEAT:", 1)[1]
+                        file_download_cb("heartbeat", json.loads(payload))
+                    except Exception:
+                        pass
     ret = proc.wait()
     if ret != 0:
         raise RuntimeError("\n".join(last_lines) or "Runtime install failed.")
@@ -474,6 +480,7 @@ def run_bootstrap_ui():
     q = queue.Queue()
     worker_running = {"value": False}
     active_model_file = {"value": None}
+    active_model_pct = {"value": 0}
 
     def worker():
         worker_running["value"] = True
@@ -720,11 +727,13 @@ def run_bootstrap_ui():
                     prog.stop()
                     if message.lower().startswith("downloading parakeet model"):
                         active_model_file["value"] = None
+                        active_model_pct["value"] = 0
                         prog.set(0)
                         phase_var.set("Downloading Parakeet model...")
                         detail_var.set("Preparing file download...")
                     else:
                         active_model_file["value"] = None
+                        active_model_pct["value"] = 0
                         prog.set((step / total) * 100 if total else 0)
                         phase_var.set(message)
                         detail_var.set("")
@@ -732,6 +741,7 @@ def run_bootstrap_ui():
                     step, total, message = msg[1], msg[2], msg[3]
                     prog.stop()
                     active_model_file["value"] = None
+                    active_model_pct["value"] = 0
                     prog.set((step / total) * 100 if total else 0)
                     phase_var.set(message)
                     detail_var.set("")
@@ -754,6 +764,7 @@ def run_bootstrap_ui():
                     if kind == "start":
                         file_size = int(payload.get("size") or 0)
                         active_model_file["value"] = file_name
+                        active_model_pct["value"] = 0
                         prog.stop()
                         prog.set(0)
                         phase_var.set(f"Downloading Parakeet model ({idx}/{total_files})")
@@ -766,6 +777,7 @@ def run_bootstrap_ui():
                         total = int(payload.get("total") or 0)
                         pct = int(payload.get("pct") or 0)
                         active_model_file["value"] = file_name or active_model_file["value"]
+                        active_model_pct["value"] = pct
                         prog.stop()
                         prog.set(pct)
                         phase_var.set(f"Downloading Parakeet model ({idx}/{total_files})")
@@ -775,6 +787,18 @@ def run_bootstrap_ui():
                             )
                         else:
                             detail_var.set(f"{file_name} • {pct}%")
+                    elif kind == "heartbeat":
+                        elapsed = int(payload.get("elapsed") or 0)
+                        file_size = int(payload.get("size") or 0)
+                        if active_model_pct["value"] == 0:
+                            prog.start(24)
+                            phase_var.set(f"Downloading Parakeet model ({idx}/{total_files})")
+                            if file_size > 0:
+                                detail_var.set(
+                                    f"{file_name} • connecting... • 0 B / {_format_bytes(file_size)} • {elapsed}s elapsed"
+                                )
+                            else:
+                                detail_var.set(f"{file_name} • connecting... • {elapsed}s elapsed")
                 elif msg[0] == "brew_missing":
                     _show_retry(True)
                     _show_brew(True)
@@ -783,6 +807,7 @@ def run_bootstrap_ui():
                 elif msg[0] == "launch":
                     prog.stop()
                     active_model_file["value"] = None
+                    active_model_pct["value"] = 0
                     if not ensure_api_keys():
                         status_var.set("Setup complete, but API key missing.")
                         phase_var.set("")
@@ -813,6 +838,7 @@ def run_bootstrap_ui():
                 elif msg[0] == "error":
                     status_var.set("Setup failed.")
                     active_model_file["value"] = None
+                    active_model_pct["value"] = 0
                     phase_var.set("")
                     detail_var.set(f"{msg[1]}\n\nLog: {LOG_FILE}")
                     _show_retry(True)
@@ -831,6 +857,7 @@ def run_bootstrap_ui():
         phase_var.set("")
         detail_var.set("")
         active_model_file["value"] = None
+        active_model_pct["value"] = 0
         prog.set(0)
         threading.Thread(target=worker, daemon=True).start()
 
