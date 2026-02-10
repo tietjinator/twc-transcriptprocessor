@@ -15,12 +15,14 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--runtime-dir", required=True)
     parser.add_argument("--requirements", required=True)
+    parser.add_argument("--runtime-version", default="")
     args = parser.parse_args()
 
     runtime_dir = Path(args.runtime_dir)
     reqs = Path(args.requirements)
     venv_dir = runtime_dir / "venv"
     marker = runtime_dir / ".installed"
+    version_marker = runtime_dir / ".runtime_version"
 
     py = sys.executable
 
@@ -166,6 +168,8 @@ for idx, s in enumerate(siblings, 1):
     )
 
     marker.write_text("ok")
+    if args.runtime_version:
+        version_marker.write_text(args.runtime_version)
     return 0
 
 

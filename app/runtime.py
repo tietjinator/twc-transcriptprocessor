@@ -8,10 +8,18 @@ RUNTIME_DIR = APP_SUPPORT_DIR / "runtime"
 RUNTIME_PYTHON = RUNTIME_DIR / "python" / "bin" / "python3"
 RUNTIME_VENV_PY = RUNTIME_DIR / "venv" / "bin" / "python"
 INSTALL_MARKER = RUNTIME_DIR / ".installed"
+RUNTIME_VERSION_MARKER = RUNTIME_DIR / ".runtime_version"
+RUNTIME_VERSION = "0.1.1"
 
 
 def runtime_exists() -> bool:
-    return RUNTIME_VENV_PY.exists() and INSTALL_MARKER.exists()
+    if not (RUNTIME_VENV_PY.exists() and INSTALL_MARKER.exists() and RUNTIME_VERSION_MARKER.exists()):
+        return False
+    try:
+        installed_version = RUNTIME_VERSION_MARKER.read_text(encoding="utf-8").strip()
+    except Exception:
+        return False
+    return installed_version == RUNTIME_VERSION
 
 
 def ensure_dirs() -> None:

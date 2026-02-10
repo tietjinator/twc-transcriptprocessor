@@ -12,7 +12,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-from .runtime import APP_SUPPORT_DIR, RUNTIME_DIR, RUNTIME_PYTHON, runtime_url, ensure_dirs
+from .runtime import APP_SUPPORT_DIR, RUNTIME_DIR, RUNTIME_PYTHON, RUNTIME_VERSION, runtime_url, ensure_dirs
 
 RUNTIME_VENV_PY = RUNTIME_DIR / "venv" / "bin" / "python"
 RUNTIME_APP_ENTRY = RUNTIME_DIR / "app" / "src" / "mac_app_modern.py"
@@ -185,6 +185,8 @@ def _install_runtime(progress_cb=None, download_cb=None, file_download_cb=None):
         str(RUNTIME_DIR),
         "--requirements",
         str(reqs),
+        "--runtime-version",
+        RUNTIME_VERSION,
     ]
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
     last_lines = []
