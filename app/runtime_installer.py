@@ -53,7 +53,31 @@ def main() -> int:
         [
             str(venv_python),
             "-c",
-            "from parakeet_mlx import from_pretrained; from_pretrained('mlx-community/parakeet-tdt-0.6b-v3')",
+            """
+from huggingface_hub import HfApi, hf_hub_download
+import os
+
+repo_id = "mlx-community/parakeet-tdt-0.6b-v3"
+cache_dir = os.environ.get("HUGGINGFACE_HUB_CACHE") or os.environ.get("HF_HOME")
+
+api = HfApi()
+info = api.model_info(repo_id)
+siblings = [s for s in info.siblings if s.rfilename and not s.rfilename.endswith(".gitattributes")]
+
+total_size = sum((s.size or 0) for s in siblings)
+total_units = total_size if total_size > 0 else len(siblings)
+downloaded = 0
+
+for idx, s in enumerate(siblings, 1):
+    hf_hub_download(repo_id=repo_id, filename=s.rfilename, cache_dir=cache_dir, resume_download=True)
+    if total_size > 0:
+        downloaded += (s.size or 0)
+        units_done = downloaded
+    else:
+        units_done = idx
+    pct = int((units_done / total_units) * 100) if total_units else 0
+    print(f"TPP_DOWNLOAD:{units_done}/{total_units}:{pct}", flush=True)
+""",
         ],
         check=True,
         env=env,

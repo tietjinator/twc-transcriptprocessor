@@ -172,7 +172,7 @@ def _save_credentials(anthropic_key: str, openai_key: str | None) -> None:
         pass
 
 
-def _install_runtime(progress_cb=None):
+def _install_runtime(progress_cb=None, download_cb=None):
     installer = RUNTIME_DIR / "runtime_installer.py"
     reqs = RUNTIME_DIR / "requirements.txt"
     if not installer.exists() or not reqs.exists():
@@ -202,6 +202,14 @@ def _install_runtime(progress_cb=None):
                         step_part, msg = payload.split(":", 1)
                         step, total = step_part.split("/", 1)
                         progress_cb(int(step), int(total), msg.strip())
+                    except Exception:
+                        pass
+                if line.startswith("TPP_DOWNLOAD:") and download_cb:
+                    try:
+                        payload = line.split("TPP_DOWNLOAD:", 1)[1]
+                        step_part, pct_part = payload.split(":", 1)
+                        done, total = step_part.split("/", 1)
+                        download_cb(int(done), int(total), int(pct_part))
                     except Exception:
                         pass
     ret = proc.wait()
@@ -474,7 +482,9 @@ def run_bootstrap_ui():
             q.put(("status", "Installing dependencies..."))
             def install_cb(step, total, message):
                 q.put(("install_step", step, total, message))
-            _install_runtime(install_cb)
+            def download_cb(done, total, pct):
+                q.put(("install_download", done, total, pct))
+            _install_runtime(install_cb, download_cb)
             q.put(("status", "Installing system dependencies..."))
             def sys_cb(step, total, message):
                 q.put(("system_step", step, total, message))
@@ -684,15 +694,29 @@ def run_bootstrap_ui():
                 elif msg[0] == "install_step":
                     step, total, message = msg[1], msg[2], msg[3]
                     prog.stop()
-                    prog.set((step / total) * 100 if total else 0)
-                    phase_var.set(message)
-                    detail_var.set("")
+                    if message.lower().startswith("downloading parakeet model"):
+                        prog.set(0)
+                        phase_var.set(message)
+                        detail_var.set("")
+                    else:
+                        prog.set((step / total) * 100 if total else 0)
+                        phase_var.set(message)
+                        detail_var.set("")
                 elif msg[0] == "system_step":
                     step, total, message = msg[1], msg[2], msg[3]
                     prog.stop()
                     prog.set((step / total) * 100 if total else 0)
                     phase_var.set(message)
                     detail_var.set("")
+                elif msg[0] == "install_download":
+                    done, total, pct = msg[1], msg[2], msg[3]
+                    prog.stop()
+                    prog.set(pct)
+                    phase_var.set("Downloading Parakeet model...")
+                    if total >= 1024 * 1024:
+                        detail_var.set(f"{done // (1024*1024)} MB / {total // (1024*1024)} MB")
+                    else:
+                        detail_var.set(f"{done} / {total} files")
                 elif msg[0] == "brew_missing":
                     _show_retry(True)
                     _show_brew(True)
