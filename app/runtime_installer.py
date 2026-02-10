@@ -48,6 +48,8 @@ def main() -> int:
     env = os.environ.copy()
     env["HUGGINGFACE_HUB_CACHE"] = str(model_cache)
     env["HF_HOME"] = str(model_cache)
+    # Force standard HTTP downloads so tqdm emits incremental byte progress.
+    env["HF_HUB_DISABLE_XET"] = "1"
     venv_python = venv_dir / "bin" / "python"
     subprocess.run(
         [
