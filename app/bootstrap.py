@@ -77,7 +77,7 @@ def _chmod_runtime_bin() -> None:
         pass
 
 
-def _install_runtime():
+def _install_runtime(progress_cb=None):
     installer = RUNTIME_DIR / "runtime_installer.py"
     reqs = RUNTIME_DIR / "requirements.txt"
     if not installer.exists() or not reqs.exists():
@@ -91,11 +91,27 @@ def _install_runtime():
         "--requirements",
         str(reqs),
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        log(result.stdout or "")
-        log(result.stderr or "")
-        raise RuntimeError(result.stderr or result.stdout)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+    last_lines = []
+    if proc.stdout:
+        for line in proc.stdout:
+            line = line.rstrip()
+            if line:
+                log(line)
+                last_lines.append(line)
+                if len(last_lines) > 20:
+                    last_lines.pop(0)
+                if line.startswith("TPP_STEP:") and progress_cb:
+                    try:
+                        payload = line.split("TPP_STEP:", 1)[1]
+                        step_part, msg = payload.split(":", 1)
+                        step, total = step_part.split("/", 1)
+                        progress_cb(int(step), int(total), msg.strip())
+                    except Exception:
+                        pass
+    ret = proc.wait()
+    if ret != 0:
+        raise RuntimeError("\n".join(last_lines) or "Runtime install failed.")
 
 
 def _launch_runtime_app() -> tuple[bool, str]:
@@ -148,7 +164,9 @@ def run_bootstrap_ui():
             _clear_quarantine(RUNTIME_DIR)
             _chmod_runtime_bin()
             q.put(("status", "Installing dependencies..."))
-            _install_runtime()
+            def install_cb(step, total, message):
+                q.put(("install_step", step, total, message))
+            _install_runtime(install_cb)
             q.put(("status", "Install complete. Launching app..."))
             q.put(("launch",))
         except Exception as e:
@@ -188,6 +206,12 @@ def run_bootstrap_ui():
                     else:
                         prog["mode"] = "indeterminate"
                         prog.start(10)
+                elif msg[0] == "install_step":
+                    step, total, message = msg[1], msg[2], msg[3]
+                    prog.stop()
+                    prog["mode"] = "determinate"
+                    prog["value"] = (step / total) * 100 if total else 0
+                    detail_var.set(message)
                 elif msg[0] == "launch":
                     prog.stop()
                     launched, reason = _launch_runtime_app()
