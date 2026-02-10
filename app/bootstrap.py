@@ -293,17 +293,31 @@ def run_bootstrap_ui():
 
     root = tk.Tk()
     root.title("Transcript Processor — Setup")
-    root.geometry("520x200")
+    root.geometry("520x260")
+    root.minsize(520, 260)
+    root.configure(bg="#f5f5f7")
 
     status_var = tk.StringVar(value="Preparing...")
-    status = ttk.Label(root, textvariable=status_var)
-    status.pack(pady=10)
+    status = tk.Label(
+        root,
+        textvariable=status_var,
+        font=("SF Pro Display", 14, "bold"),
+        bg="#f5f5f7",
+        fg="#1d1d1f",
+    )
+    status.pack(pady=(14, 8))
 
     prog = ttk.Progressbar(root, mode="determinate", length=420)
     prog.pack(pady=10)
 
     detail_var = tk.StringVar(value="")
-    detail = ttk.Label(root, textvariable=detail_var)
+    detail = tk.Label(
+        root,
+        textvariable=detail_var,
+        font=("SF Pro Display", 11),
+        bg="#f5f5f7",
+        fg="#555",
+    )
     detail.pack(pady=6)
 
     def ensure_api_keys() -> bool:
@@ -314,7 +328,7 @@ def run_bootstrap_ui():
 
         dialog = tk.Toplevel(root)
         dialog.title("API Keys Required")
-        dialog.geometry("520x300")
+        dialog.geometry("540x320")
         dialog.configure(bg="#f5f5f7")
         dialog.transient(root)
         dialog.grab_set()
@@ -337,12 +351,12 @@ def run_bootstrap_ui():
         form = tk.Frame(dialog, bg="#f5f5f7")
         form.pack(padx=20, pady=6, fill=tk.X)
 
-        tk.Label(form, text="Anthropic API Key", font=("SF Pro Display", 11), bg="#f5f5f7").grid(row=0, column=0, sticky="w", pady=4)
-        anthropic_entry = tk.Entry(form, width=48, show="*", font=("SF Pro Display", 11))
+        tk.Label(form, text="Anthropic API Key", font=("SF Pro Display", 11), bg="#f5f5f7", fg="#1d1d1f").grid(row=0, column=0, sticky="w", pady=4)
+        anthropic_entry = tk.Entry(form, width=48, show="*", font=("SF Pro Display", 11), bg="white", fg="#1d1d1f", insertbackground="#1d1d1f")
         anthropic_entry.grid(row=1, column=0, sticky="we", pady=(0, 8))
 
-        tk.Label(form, text="OpenAI API Key (optional)", font=("SF Pro Display", 11), bg="#f5f5f7").grid(row=2, column=0, sticky="w", pady=4)
-        openai_entry = tk.Entry(form, width=48, show="*", font=("SF Pro Display", 11))
+        tk.Label(form, text="OpenAI API Key (optional)", font=("SF Pro Display", 11), bg="#f5f5f7", fg="#1d1d1f").grid(row=2, column=0, sticky="w", pady=4)
+        openai_entry = tk.Entry(form, width=48, show="*", font=("SF Pro Display", 11), bg="white", fg="#1d1d1f", insertbackground="#1d1d1f")
         openai_entry.grid(row=3, column=0, sticky="we")
 
         form.columnconfigure(0, weight=1)
@@ -395,7 +409,9 @@ def run_bootstrap_ui():
             padx=24,
             pady=8,
             relief=tk.FLAT,
-            cursor="hand2"
+            cursor="hand2",
+            activebackground="#0a68d8",
+            activeforeground="white",
         )
         save_btn.pack(side=tk.LEFT, padx=6)
 
@@ -405,11 +421,13 @@ def run_bootstrap_ui():
             command=on_cancel,
             font=("SF Pro Display", 12),
             bg="#E0E0E0",
-            fg="#333",
+            fg="#1d1d1f",
             padx=24,
             pady=8,
             relief=tk.FLAT,
-            cursor="hand2"
+            cursor="hand2",
+            activebackground="#d5d5d5",
+            activeforeground="#1d1d1f",
         )
         cancel_btn.pack(side=tk.LEFT, padx=6)
 
@@ -498,14 +516,49 @@ def run_bootstrap_ui():
         cmd = '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
         _open_terminal_with_command(cmd)
 
-    retry_btn = ttk.Button(root, text="Retry", command=start_worker, state="disabled")
+    retry_btn = tk.Button(
+        root,
+        text="Retry",
+        command=start_worker,
+        state="disabled",
+        font=("SF Pro Display", 12),
+        bg="#E0E0E0",
+        fg="#1d1d1f",
+        padx=20,
+        pady=6,
+        relief=tk.FLAT,
+        cursor="hand2",
+    )
     retry_btn.pack(pady=4)
 
-    brew_btn = ttk.Button(root, text="Install Homebrew", command=install_homebrew, state="disabled")
+    brew_btn = tk.Button(
+        root,
+        text="Install Homebrew",
+        command=install_homebrew,
+        state="disabled",
+        font=("SF Pro Display", 12),
+        bg="#E0E0E0",
+        fg="#1d1d1f",
+        padx=20,
+        pady=6,
+        relief=tk.FLAT,
+        cursor="hand2",
+    )
     brew_btn.pack(pady=2)
 
-    log_btn = ttk.Button(root, text="Open Log Folder", command=open_log_dir)
-    log_btn.pack(pady=2)
+    log_btn = tk.Button(
+        root,
+        text="Open Log Folder",
+        command=open_log_dir,
+        font=("SF Pro Display", 12),
+        bg="#E0E0E0",
+        fg="#1d1d1f",
+        padx=20,
+        pady=6,
+        relief=tk.FLAT,
+        cursor="hand2",
+    )
+    log_btn.pack(pady=(2, 10))
 
     start_worker()
     root.after(200, poll)
