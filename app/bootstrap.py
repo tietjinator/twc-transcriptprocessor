@@ -249,6 +249,116 @@ def run_bootstrap_ui():
     except Exception:
         return run_bootstrap_cli()
 
+    class ModernButton(tk.Canvas):
+        """Rounded button similar to the main app UI."""
+
+        def __init__(
+            self,
+            parent,
+            text,
+            command,
+            bg_color="#007AFF",
+            text_color="white",
+            hover_color=None,
+            disabled_color="#E0E0E0",
+            disabled_text="#A0A0A0",
+            font_size=12,
+            padx=26,
+            pady=10,
+        ):
+            super().__init__(parent, highlightthickness=0, bg=parent["bg"])
+            self.command = command
+            self.bg_color = bg_color
+            self.text_color = text_color
+            self.hover_color = hover_color or self._adjust_color(bg_color, 0.9)
+            self.disabled_color = disabled_color
+            self.disabled_text = disabled_text
+            self.enabled = True
+
+            text_width = len(text) * (font_size * 0.6)
+            width = int(text_width + padx * 2)
+            height = int(font_size + pady * 2)
+            self.config(width=width, height=height)
+
+            radius = 8
+            self.rect = self.create_rounded_rectangle(
+                0, 0, width, height, radius=radius, fill=bg_color, outline=""
+            )
+            self.text_id = self.create_text(
+                width / 2,
+                height / 2,
+                text=text,
+                fill=text_color,
+                font=("SF Pro Display", font_size, "bold"),
+            )
+
+            self.tag_bind(self.rect, "<Enter>", self._on_enter)
+            self.tag_bind(self.text_id, "<Enter>", self._on_enter)
+            self.tag_bind(self.rect, "<Leave>", self._on_leave)
+            self.tag_bind(self.text_id, "<Leave>", self._on_leave)
+            self.tag_bind(self.rect, "<Button-1>", self._on_click)
+            self.tag_bind(self.text_id, "<Button-1>", self._on_click)
+
+        def create_rounded_rectangle(self, x1, y1, x2, y2, radius=8, **kwargs):
+            points = [
+                x1 + radius, y1,
+                x1 + radius, y1,
+                x2 - radius, y1,
+                x2 - radius, y1,
+                x2, y1,
+                x2, y1 + radius,
+                x2, y1 + radius,
+                x2, y2 - radius,
+                x2, y2 - radius,
+                x2, y2,
+                x2 - radius, y2,
+                x2 - radius, y2,
+                x1 + radius, y2,
+                x1 + radius, y2,
+                x1, y2,
+                x1, y2 - radius,
+                x1, y2 - radius,
+                x1, y1 + radius,
+                x1, y1 + radius,
+                x1, y1,
+            ]
+            return self.create_polygon(points, smooth=True, **kwargs)
+
+        def _adjust_color(self, color, factor):
+            color = color.lstrip("#")
+            r = int(color[0:2], 16)
+            g = int(color[2:4], 16)
+            b = int(color[4:6], 16)
+            r = int(r * factor)
+            g = int(g * factor)
+            b = int(b * factor)
+            return f"#{r:02x}{g:02x}{b:02x}"
+
+        def set_enabled(self, enabled: bool):
+            self.enabled = enabled
+            if enabled:
+                self.itemconfig(self.rect, fill=self.bg_color)
+                self.itemconfig(self.text_id, fill=self.text_color)
+            else:
+                self.itemconfig(self.rect, fill=self.disabled_color)
+                self.itemconfig(self.text_id, fill=self.disabled_text)
+
+        def _on_enter(self, _event=None):
+            if not self.enabled:
+                return
+            self.itemconfig(self.rect, fill=self.hover_color)
+            self.config(cursor="hand2")
+
+        def _on_leave(self, _event=None):
+            if not self.enabled:
+                return
+            self.itemconfig(self.rect, fill=self.bg_color)
+            self.config(cursor="")
+
+        def _on_click(self, _event=None):
+            if self.enabled and self.command:
+                self.command()
+
     q = queue.Queue()
     worker_running = {"value": False}
 
@@ -293,8 +403,8 @@ def run_bootstrap_ui():
 
     root = tk.Tk()
     root.title("Transcript Processor — Setup")
-    root.geometry("520x260")
-    root.minsize(520, 260)
+    root.geometry("520x290")
+    root.minsize(520, 290)
     root.configure(bg="#f5f5f7")
 
     status_var = tk.StringVar(value="Preparing...")
@@ -328,7 +438,7 @@ def run_bootstrap_ui():
 
         dialog = tk.Toplevel(root)
         dialog.title("API Keys Required")
-        dialog.geometry("540x320")
+        dialog.geometry("560x340")
         dialog.configure(bg="#f5f5f7")
         dialog.transient(root)
         dialog.grab_set()
@@ -352,11 +462,35 @@ def run_bootstrap_ui():
         form.pack(padx=20, pady=6, fill=tk.X)
 
         tk.Label(form, text="Anthropic API Key", font=("SF Pro Display", 11), bg="#f5f5f7", fg="#1d1d1f").grid(row=0, column=0, sticky="w", pady=4)
-        anthropic_entry = tk.Entry(form, width=48, show="*", font=("SF Pro Display", 11), bg="white", fg="#1d1d1f", insertbackground="#1d1d1f")
+        anthropic_entry = tk.Entry(
+            form,
+            width=48,
+            show="*",
+            font=("SF Pro Display", 11),
+            bg="white",
+            fg="#1d1d1f",
+            insertbackground="#1d1d1f",
+            highlightthickness=1,
+            highlightbackground="#d0d0d0",
+            highlightcolor="#007AFF",
+            relief=tk.FLAT,
+        )
         anthropic_entry.grid(row=1, column=0, sticky="we", pady=(0, 8))
 
         tk.Label(form, text="OpenAI API Key (optional)", font=("SF Pro Display", 11), bg="#f5f5f7", fg="#1d1d1f").grid(row=2, column=0, sticky="w", pady=4)
-        openai_entry = tk.Entry(form, width=48, show="*", font=("SF Pro Display", 11), bg="white", fg="#1d1d1f", insertbackground="#1d1d1f")
+        openai_entry = tk.Entry(
+            form,
+            width=48,
+            show="*",
+            font=("SF Pro Display", 11),
+            bg="white",
+            fg="#1d1d1f",
+            insertbackground="#1d1d1f",
+            highlightthickness=1,
+            highlightbackground="#d0d0d0",
+            highlightcolor="#007AFF",
+            relief=tk.FLAT,
+        )
         openai_entry.grid(row=3, column=0, sticky="we")
 
         form.columnconfigure(0, weight=1)
@@ -399,37 +533,30 @@ def run_bootstrap_ui():
         btn_frame = tk.Frame(dialog, bg="#f5f5f7")
         btn_frame.pack(pady=18)
 
-        save_btn = tk.Button(
+        save_btn = ModernButton(
             btn_frame,
             text="Save",
             command=on_save,
-            font=("SF Pro Display", 12),
-            bg="#007AFF",
-            fg="white",
-            padx=24,
-            pady=8,
-            relief=tk.FLAT,
-            cursor="hand2",
-            activebackground="#0a68d8",
-            activeforeground="white",
+            bg_color="#007AFF",
+            text_color="white",
+            font_size=12,
+            padx=28,
+            pady=10,
         )
-        save_btn.pack(side=tk.LEFT, padx=6)
+        save_btn.pack(side=tk.LEFT, padx=8)
 
-        cancel_btn = tk.Button(
+        cancel_btn = ModernButton(
             btn_frame,
             text="Cancel",
             command=on_cancel,
-            font=("SF Pro Display", 12),
-            bg="#E0E0E0",
-            fg="#1d1d1f",
-            padx=24,
-            pady=8,
-            relief=tk.FLAT,
-            cursor="hand2",
-            activebackground="#d5d5d5",
-            activeforeground="#1d1d1f",
+            bg_color="#E0E0E0",
+            text_color="#1d1d1f",
+            hover_color="#d5d5d5",
+            font_size=12,
+            padx=28,
+            pady=10,
         )
-        cancel_btn.pack(side=tk.LEFT, padx=6)
+        cancel_btn.pack(side=tk.LEFT, padx=8)
 
         dialog.wait_window()
         return result["saved"]
@@ -461,14 +588,14 @@ def run_bootstrap_ui():
                     prog["value"] = (step / total) * 100 if total else 0
                     detail_var.set(message)
                 elif msg[0] == "brew_missing":
-                    retry_btn.config(state="normal")
-                    brew_btn.config(state="normal")
+                    retry_btn.set_enabled(True)
+                    brew_btn.set_enabled(True)
                 elif msg[0] == "launch":
                     prog.stop()
                     if not ensure_api_keys():
                         status_var.set("Setup complete, but API key missing.")
                         detail_var.set(f"Anthropic API key required.\n\nLog: {LOG_FILE}")
-                        retry_btn.config(state="normal")
+                        retry_btn.set_enabled(True)
                         continue
                     launched, reason = _launch_runtime_app()
                     if launched:
@@ -484,7 +611,7 @@ def run_bootstrap_ui():
                             f"Log: {LOG_FILE}\n\n"
                             f"Reason: {reason}"
                         )
-                        retry_btn.config(state="normal")
+                        retry_btn.set_enabled(True)
                         messagebox.showinfo(
                             "Setup Complete",
                             "Dependencies installed successfully.\n\nPlease reopen the app.",
@@ -492,7 +619,7 @@ def run_bootstrap_ui():
                 elif msg[0] == "error":
                     status_var.set("Setup failed.")
                     detail_var.set(f"{msg[1]}\n\nLog: {LOG_FILE}")
-                    retry_btn.config(state="normal")
+                    retry_btn.set_enabled(True)
         except queue.Empty:
             pass
         root.after(200, poll)
@@ -500,7 +627,7 @@ def run_bootstrap_ui():
     def start_worker():
         if worker_running["value"]:
             return
-        retry_btn.config(state="disabled")
+        retry_btn.set_enabled(False)
         detail_var.set("")
         prog["value"] = 0
         prog["mode"] = "determinate"
@@ -516,49 +643,48 @@ def run_bootstrap_ui():
         cmd = '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
         _open_terminal_with_command(cmd)
 
-    retry_btn = tk.Button(
-        root,
+    btn_frame = tk.Frame(root, bg="#f5f5f7")
+    btn_frame.pack(pady=(2, 10))
+
+    retry_btn = ModernButton(
+        btn_frame,
         text="Retry",
         command=start_worker,
-        state="disabled",
-        font=("SF Pro Display", 12),
-        bg="#E0E0E0",
-        fg="#1d1d1f",
-        padx=20,
-        pady=6,
-        relief=tk.FLAT,
-        cursor="hand2",
+        bg_color="#E0E0E0",
+        text_color="#1d1d1f",
+        hover_color="#d5d5d5",
+        font_size=12,
+        padx=26,
+        pady=8,
     )
     retry_btn.pack(pady=4)
+    retry_btn.set_enabled(False)
 
-    brew_btn = tk.Button(
-        root,
+    brew_btn = ModernButton(
+        btn_frame,
         text="Install Homebrew",
         command=install_homebrew,
-        state="disabled",
-        font=("SF Pro Display", 12),
-        bg="#E0E0E0",
-        fg="#1d1d1f",
-        padx=20,
-        pady=6,
-        relief=tk.FLAT,
-        cursor="hand2",
+        bg_color="#E0E0E0",
+        text_color="#1d1d1f",
+        hover_color="#d5d5d5",
+        font_size=12,
+        padx=26,
+        pady=8,
     )
-    brew_btn.pack(pady=2)
+    brew_btn.pack(pady=4)
+    brew_btn.set_enabled(False)
 
-    log_btn = tk.Button(
-        root,
+    log_btn = ModernButton(
+        btn_frame,
         text="Open Log Folder",
         command=open_log_dir,
-        font=("SF Pro Display", 12),
-        bg="#E0E0E0",
-        fg="#1d1d1f",
-        padx=20,
-        pady=6,
-        relief=tk.FLAT,
-        cursor="hand2",
+        bg_color="#007AFF",
+        text_color="white",
+        font_size=12,
+        padx=26,
+        pady=8,
     )
-    log_btn.pack(pady=(2, 10))
+    log_btn.pack(pady=4)
 
     start_worker()
     root.after(200, poll)
