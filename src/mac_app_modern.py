@@ -10,6 +10,7 @@ import threading
 import queue
 import json
 import os
+import re
 from PIL import Image, ImageTk
 from config import load_api_key, HOME_CONFIG_FILE
 # from first_time_setup import needs_setup, run_setup  # Disabled - skip setup wizard
@@ -604,6 +605,25 @@ class TranscriptProcessorApp:
         # Animation variables
         self.activity_animation_running = False
         self.activity_dots = 0
+        self.processing_active = False
+        self.ready_reset_after_id = None
+        self.idle_status = ("Ready", "#e8e8ed", "#1d1d1f")
+
+    def _set_status(self, text: str, bg: str, fg: str):
+        self.status_label.config(text=text, bg=bg, fg=fg)
+
+    def _cancel_idle_reset(self):
+        if self.ready_reset_after_id:
+            self.root.after_cancel(self.ready_reset_after_id)
+            self.ready_reset_after_id = None
+
+    def _restore_idle_status(self):
+        self.ready_reset_after_id = None
+        self._set_status(*self.idle_status)
+
+    def _schedule_idle_reset(self, delay_ms: int = 2500):
+        self._cancel_idle_reset()
+        self.ready_reset_after_id = self.root.after(delay_ms, self._restore_idle_status)
 
     def check_services_on_startup(self):
         """Check service availability when app starts"""
@@ -659,13 +679,16 @@ class TranscriptProcessorApp:
 
         if required_ready and transcription_ready:
             self.log("\n✓ All systems ready!")
-            self.status_label.config(text="✓ Ready to process files", bg="#d1f4e0", fg="#0d5c2d")
+            self.idle_status = ("✓ Ready to process files", "#d1f4e0", "#0d5c2d")
+            self._set_status(*self.idle_status)
         elif required_ready:
             self.log("\n⚠️ Core services ready, but no transcription engine available.")
-            self.status_label.config(text="⚠️ Check transcription settings", bg="#fff4ce", fg="#805800")
+            self.idle_status = ("⚠️ Check transcription settings", "#fff4ce", "#805800")
+            self._set_status(*self.idle_status)
         else:
             self.log("\n✗ Required services missing. Please resolve issues above.")
-            self.status_label.config(text="✗ Not ready - check log", bg="#ffe0e0", fg="#a41c27")
+            self.idle_status = ("✗ Not ready - check log", "#ffe0e0", "#a41c27")
+            self._set_status(*self.idle_status)
 
     def browse_files(self):
         """Browse for individual files"""
@@ -733,11 +756,9 @@ class TranscriptProcessorApp:
         self.log(f"Formatting: {self.formatting_engine.get()}")
         self.log(f"Metadata: {self.metadata_engine.get()}\n")
 
-        self.status_label.config(
-            text=f"⏳ Processing {len(file_paths)} files",
-            bg="#fff4ce",
-            fg="#805800"
-        )
+        self._cancel_idle_reset()
+        self.processing_active = True
+        self._set_status(f"⏳ Processing {len(file_paths)} files", "#fff4ce", "#805800")
 
         # Start activity indicator (adds animated dots to status)
         self.start_activity_indicator()
@@ -795,32 +816,24 @@ class TranscriptProcessorApp:
         """Called when processing completes"""
         # Stop activity indicator
         self.stop_activity_indicator()
+        self.processing_active = False
 
         if success_count == total_count:
-            self.status_label.config(
-                text=f"✓ Completed: {success_count} files processed successfully",
-                bg="#d1f4e0",
-                fg="#0d5c2d"
-            )
+            self._set_status(f"✓ Completed: {success_count} files processed successfully", "#d1f4e0", "#0d5c2d")
             self.log(f"\n✓ All files processed successfully!")
+            self._schedule_idle_reset(2200)
         else:
-            self.status_label.config(
-                text=f"⚠️  Completed: {success_count}/{total_count} files processed",
-                bg="#fff4ce",
-                fg="#805800"
-            )
+            self._set_status(f"⚠️  Completed: {success_count}/{total_count} files processed", "#fff4ce", "#805800")
             self.log(f"\n⚠️  {success_count} of {total_count} files processed")
+            self._schedule_idle_reset(3500)
 
     def _processing_error(self, error_msg):
         """Called when processing fails"""
         # Stop activity indicator
         self.stop_activity_indicator()
-
-        self.status_label.config(
-            text="✗ Processing failed",
-            bg="#ffdce0",
-            fg="#a41c27"
-        )
+        self.processing_active = False
+        self._cancel_idle_reset()
+        self._set_status("✗ Processing failed", "#ffdce0", "#a41c27")
         self.log(f"\n✗ Error: {error_msg}")
         messagebox.showerror("Processing Error", error_msg)
 
@@ -855,6 +868,26 @@ class TranscriptProcessorApp:
         """Stop activity indicator"""
         self.activity_animation_running = False
 
+    def _maybe_finalize_from_log(self, message: str):
+        """Fallback status reset when completion is reported through streamed logs."""
+        if not self.processing_active:
+            return
+        match = re.search(r"Completed:\s*(\d+)\s*/\s*(\d+)\s*files processed successfully", message)
+        if not match:
+            return
+
+        success_count = int(match.group(1))
+        total_count = int(match.group(2))
+        self.stop_activity_indicator()
+        self.processing_active = False
+
+        if success_count == total_count:
+            self._set_status(f"✓ Completed: {success_count} files processed successfully", "#d1f4e0", "#0d5c2d")
+            self._schedule_idle_reset(2200)
+        else:
+            self._set_status(f"⚠️  Completed: {success_count}/{total_count} files processed", "#fff4ce", "#805800")
+            self._schedule_idle_reset(3500)
+
     def _animate_activity(self):
         """Animate dots in status bar"""
         if not self.activity_animation_running:
@@ -878,6 +911,7 @@ class TranscriptProcessorApp:
     def _append_log(self, message: str):
         self.log_text.insert(tk.END, message + "\n")
         self.log_text.see(tk.END)
+        self._maybe_finalize_from_log(message)
         self.root.update_idletasks()
 
     def _flush_log_queue(self):
