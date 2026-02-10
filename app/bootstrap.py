@@ -235,6 +235,9 @@ def _launch_runtime_app() -> tuple[bool, str]:
         fallback_libs = ["/opt/homebrew/lib", "/usr/local/lib"]
         existing = env.get("DYLD_FALLBACK_LIBRARY_PATH", "")
         env["DYLD_FALLBACK_LIBRARY_PATH"] = ":".join(fallback_libs + ([existing] if existing else []))
+        model_cache = RUNTIME_DIR / "models" / "huggingface"
+        env["HUGGINGFACE_HUB_CACHE"] = str(model_cache)
+        env["HF_HOME"] = str(model_cache)
 
         subprocess.Popen([str(py), str(RUNTIME_APP_ENTRY)], cwd=str(RUNTIME_DIR / "app"), env=env)
         return True, ""
