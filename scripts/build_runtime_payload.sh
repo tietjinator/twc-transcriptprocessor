@@ -8,13 +8,41 @@ PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_DIR="$PROJECT_ROOT/build"
 RUNTIME_DIR="$BUILD_DIR/runtime"
 PAYLOAD_OUT="$BUILD_DIR/runtime_payload.tar.gz"
-REQS_PATH="${TPP_REQUIREMENTS:-/Users/matthewtietje/TranscriptProcessor/requirements.txt}"
-APP_SRC_ROOT="${TPP_APP_SRC_ROOT:-/Users/matthewtietje/TranscriptProcessor}"
+REQS_PATH="${TPP_REQUIREMENTS:-}"
+APP_SRC_ROOT="${TPP_APP_SRC_ROOT:-}"
 PYBS_URL="${TPP_PYBS_URL:-}"
 
 mkdir -p "$BUILD_DIR"
 rm -rf "$RUNTIME_DIR"
 mkdir -p "$RUNTIME_DIR"
+
+# Resolve app source root in a portable way when env vars are not provided.
+if [ -z "$APP_SRC_ROOT" ]; then
+  for candidate in \
+    "$PROJECT_ROOT/../TranscriptProcessor" \
+    "$PROJECT_ROOT/../TranscriptProcessor-portable" \
+    "$PROJECT_ROOT"
+  do
+    if [ -f "$candidate/src/mac_app_modern.py" ]; then
+      APP_SRC_ROOT="$candidate"
+      break
+    fi
+  done
+fi
+
+if [ -z "$APP_SRC_ROOT" ]; then
+  echo "Unable to locate app source root automatically."
+  echo "Set TPP_APP_SRC_ROOT=/path/to/source before running this script."
+  exit 1
+fi
+
+if [ -z "$REQS_PATH" ]; then
+  if [ -f "$APP_SRC_ROOT/requirements.txt" ]; then
+    REQS_PATH="$APP_SRC_ROOT/requirements.txt"
+  else
+    REQS_PATH="$PROJECT_ROOT/requirements.txt"
+  fi
+fi
 
 # 1) Download portable Python (python-build-standalone)
 if [ -z "$PYBS_URL" ]; then
@@ -49,7 +77,8 @@ tar -xzf "$PYBS_TAR" -C "$RUNTIME_DIR"
 if [ -f "$REQS_PATH" ]; then
   cp "$REQS_PATH" "$RUNTIME_DIR/requirements.txt"
 else
-  echo "Requirements not found at $REQS_PATH. Skipping."
+  echo "Requirements not found at $REQS_PATH"
+  exit 1
 fi
 
 cp "$PROJECT_ROOT/app/runtime_installer.py" "$RUNTIME_DIR/runtime_installer.py"

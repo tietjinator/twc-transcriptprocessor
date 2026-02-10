@@ -7,7 +7,7 @@ This repository builds a **macOS bootstrap app** that downloads and installs the
 - Drag **Transcript Processor.app** into **Applications**
 - Launch the app and let it install the runtime on first run
 
-Full install guide: `/Users/matthewtietje/TWC Archives Transcript Processor app/INSTALL.md`
+Full install guide: `INSTALL.md`
 
 ## What This Repo Contains
 - A lightweight `.app` bundle that shows a setup UI and installs a runtime.
@@ -28,22 +28,22 @@ Full install guide: `/Users/matthewtietje/TWC Archives Transcript Processor app/
 ## Build (Local)
 ### Build the runtime payload
 ```bash
-bash "/Users/matthewtietje/TWC Archives Transcript Processor app/scripts/build_runtime_payload.sh"
+bash "./scripts/build_runtime_payload.sh"
 ```
 
 ### Build the macOS app
 ```bash
-bash "/Users/matthewtietje/TWC Archives Transcript Processor app/scripts/build_macos.sh"
+bash "./scripts/build_macos.sh"
 ```
 
 Output:
-- App bundle: `/Users/matthewtietje/TWC Archives Transcript Processor app/build/dist/Transcript Processor.app`
-- Payload: `/Users/matthewtietje/TWC Archives Transcript Processor app/build/runtime_payload.tar.gz`
+- App bundle: `build/dist/Transcript Processor.app`
+- Payload: `build/runtime_payload.tar.gz`
 
 ## Publish Payload
 ```bash
 gh release upload v0.1.0 \
-  "/Users/matthewtietje/TWC Archives Transcript Processor app/build/runtime_payload.tar.gz" \
+  "./build/runtime_payload.tar.gz" \
   --repo tietjinator/twc-transcriptprocessor --clobber
 ```
 
@@ -79,5 +79,5 @@ All trademarks and licenses remain with their respective owners. This project is
 ---
 
 For more detail, see:
-- `/Users/matthewtietje/TWC Archives Transcript Processor app/docs/REQUIREMENTS.md`
-- `/Users/matthewtietje/TWC Archives Transcript Processor app/docs/PIPELINE.md`
+- `docs/REQUIREMENTS.md`
+- `docs/PIPELINE.md`
