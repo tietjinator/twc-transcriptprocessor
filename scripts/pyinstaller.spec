@@ -3,7 +3,7 @@
 
 from PyInstaller.utils.hooks import collect_submodules
 
-hidden_imports = collect_submodules("tkinter")
+hidden_imports = collect_submodules("tkinter") + collect_submodules("app")
 
 block_cipher = None
 
@@ -13,11 +13,7 @@ a = Analysis(
     pathex=[".."],
     binaries=[],
     datas=[],
-    hiddenimports=hidden_imports + [
-        "app.bootstrap",
-        "app.runtime",
-        "app.runtime_installer",
-    ],
+    hiddenimports=hidden_imports,
     hookspath=[],
     runtime_hooks=[],
     excludes=[],

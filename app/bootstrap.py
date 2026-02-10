@@ -96,9 +96,10 @@ def _find_brew() -> str | None:
 
 def _open_terminal_with_command(command: str) -> None:
     try:
+        safe_cmd = command.replace('"', '\\"')
         osa = (
             'tell application "Terminal"\n'
-            f'  do script "{command.replace(\'"\', \'\\\"\')}"\n'
+            f'  do script "{safe_cmd}"\n'
             "  activate\n"
             "end tell"
         )
