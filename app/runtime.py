@@ -22,5 +22,5 @@ def runtime_url() -> str:
     # Override with environment variable in production
     return os.environ.get(
         "TPP_RUNTIME_URL",
-        "https://github.com/tietjinator/twc-transcriptprocessor/releases/download/v0.1.0/runtime_payload.zip",
+        "https://github.com/tietjinator/twc-transcriptprocessor/releases/download/v0.1.0/runtime_payload.tar.gz",
     )

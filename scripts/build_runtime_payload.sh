@@ -7,8 +7,9 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_DIR="$PROJECT_ROOT/build"
 RUNTIME_DIR="$BUILD_DIR/runtime"
-PAYLOAD_OUT="$BUILD_DIR/runtime_payload.zip"
+PAYLOAD_OUT="$BUILD_DIR/runtime_payload.tar.gz"
 REQS_PATH="${TPP_REQUIREMENTS:-/Users/matthewtietje/TranscriptProcessor/requirements.txt}"
+APP_SRC_ROOT="${TPP_APP_SRC_ROOT:-/Users/matthewtietje/TranscriptProcessor}"
 PYBS_URL="${TPP_PYBS_URL:-}"
 
 mkdir -p "$BUILD_DIR"
@@ -44,7 +45,7 @@ curl -L "$PYBS_URL" -o "$PYBS_TAR"
 # 2) Extract Python runtime into runtime/python
 tar -xzf "$PYBS_TAR" -C "$RUNTIME_DIR"
 
-# 3) Copy installer + requirements + app entrypoint
+# 3) Copy installer + requirements + app code
 if [ -f "$REQS_PATH" ]; then
   cp "$REQS_PATH" "$RUNTIME_DIR/requirements.txt"
 else
@@ -53,13 +54,35 @@ fi
 
 cp "$PROJECT_ROOT/app/runtime_installer.py" "$RUNTIME_DIR/runtime_installer.py"
 mkdir -p "$RUNTIME_DIR/app"
-cp "$PROJECT_ROOT/app/real_app.py" "$RUNTIME_DIR/app/real_app.py"
+
+# Copy app source + assets from the main project
+if [ -d "$APP_SRC_ROOT/src" ]; then
+  mkdir -p "$RUNTIME_DIR/app/src"
+  cp -R "$APP_SRC_ROOT/src/." "$RUNTIME_DIR/app/src/"
+else
+  echo "App src not found at $APP_SRC_ROOT/src"
+fi
+
+if [ -d "$APP_SRC_ROOT/assets" ]; then
+  mkdir -p "$RUNTIME_DIR/app/assets"
+  cp -R "$APP_SRC_ROOT/assets/." "$RUNTIME_DIR/app/assets/"
+fi
+
+if [ -f "$APP_SRC_ROOT/scripts/save_api_key.py" ]; then
+  mkdir -p "$RUNTIME_DIR/app/scripts"
+  cp "$APP_SRC_ROOT/scripts/save_api_key.py" "$RUNTIME_DIR/app/scripts/"
+fi
+
+if [ ! -f "$RUNTIME_DIR/app/src/mac_app_modern.py" ]; then
+  echo "Expected app entry not found in payload. Check APP_SRC_ROOT."
+  exit 1
+fi
 
 # 4) Add ffmpeg / native libs (placeholder)
 # cp /path/to/ffmpeg "$RUNTIME_DIR/"
 
 # 5) Package runtime payload
 cd "$RUNTIME_DIR"
-zip -r "$PAYLOAD_OUT" .
+tar -czf "$PAYLOAD_OUT" .
 
 echo "Payload written to $PAYLOAD_OUT"

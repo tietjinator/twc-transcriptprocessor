@@ -3,12 +3,17 @@ from __future__ import annotations
 import sys
 import subprocess
 
-from .runtime import runtime_exists, RUNTIME_DIR, RUNTIME_VENV_PY
-from .bootstrap import run_bootstrap_ui
+try:
+    from app.runtime import runtime_exists, RUNTIME_DIR, RUNTIME_VENV_PY
+    from app.bootstrap import run_bootstrap_ui
+except Exception:
+    # Fallback for running as a script from the app/ directory
+    from runtime import runtime_exists, RUNTIME_DIR, RUNTIME_VENV_PY  # type: ignore
+    from bootstrap import run_bootstrap_ui  # type: ignore
 
 
 def launch_real_app():
-    app_entry = RUNTIME_DIR / "app" / "real_app.py"
+    app_entry = RUNTIME_DIR / "app" / "src" / "mac_app_modern.py"
     if not RUNTIME_VENV_PY.exists():
         print("Runtime python not found. Please run setup again.")
         return 1

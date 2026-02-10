@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -18,6 +19,12 @@ def main() -> int:
     marker = runtime_dir / ".installed"
 
     py = sys.executable
+
+    # Ensure the portable Python is executable (quarantine/permissions)
+    try:
+        os.chmod(py, 0o755)
+    except Exception:
+        pass
 
     # Create venv
     subprocess.run([py, "-m", "venv", str(venv_dir)], check=True)

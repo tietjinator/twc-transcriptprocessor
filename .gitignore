@@ -2,6 +2,8 @@
 /build/
 /dist/
 /runtime_payload.zip
+runtime_payload.tar.gz
+runtime_payload.*
 *.zip
 *.dmg
 *.app
