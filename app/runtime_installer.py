@@ -54,7 +54,9 @@ def main() -> int:
             str(venv_python),
             "-c",
             """
+import json
 from huggingface_hub import HfApi, hf_hub_download
+from tqdm.auto import tqdm
 import os
 
 repo_id = "mlx-community/parakeet-tdt-0.6b-v3"
@@ -63,15 +65,73 @@ cache_dir = os.environ.get("HUGGINGFACE_HUB_CACHE") or os.environ.get("HF_HOME")
 api = HfApi()
 info = api.model_info(repo_id)
 siblings = [s for s in info.siblings if s.rfilename and not s.rfilename.endswith(".gitattributes")]
+siblings = sorted(siblings, key=lambda s: s.rfilename)
+
+class EmitTqdm(tqdm):
+    current_file = ""
+    current_index = 0
+    total_files = 0
+    file_size = 0
+
+    def __init__(self, *args, **kwargs):
+        kwargs["disable"] = True
+        super().__init__(*args, **kwargs)
+        self.last_pct = -1
+
+    def update(self, n=1):
+        out = super().update(n)
+        total = int(self.total or self.file_size or 0)
+        done = int(self.n)
+        pct = int((done / total) * 100) if total > 0 else 0
+        if pct != self.last_pct:
+            print("TPP_FILE_PROGRESS:" + json.dumps({
+                "index": self.current_index,
+                "total_files": self.total_files,
+                "file": self.current_file,
+                "done": done,
+                "total": total,
+                "pct": pct
+            }), flush=True)
+            self.last_pct = pct
+        return out
 
 total_size = sum((s.size or 0) for s in siblings)
 total_units = total_size if total_size > 0 else len(siblings)
 downloaded = 0
 
 for idx, s in enumerate(siblings, 1):
-    hf_hub_download(repo_id=repo_id, filename=s.rfilename, cache_dir=cache_dir, resume_download=True)
+    file_size = int(s.size or 0)
+    print("TPP_FILE_START:" + json.dumps({
+        "index": idx,
+        "total_files": len(siblings),
+        "file": s.rfilename,
+        "size": file_size
+    }), flush=True)
+
+    EmitTqdm.current_file = s.rfilename
+    EmitTqdm.current_index = idx
+    EmitTqdm.total_files = len(siblings)
+    EmitTqdm.file_size = file_size
+
+    hf_hub_download(
+        repo_id=repo_id,
+        filename=s.rfilename,
+        cache_dir=cache_dir,
+        resume_download=True,
+        tqdm_class=EmitTqdm,
+    )
+
+    print("TPP_FILE_PROGRESS:" + json.dumps({
+        "index": idx,
+        "total_files": len(siblings),
+        "file": s.rfilename,
+        "done": file_size,
+        "total": file_size,
+        "pct": 100
+    }), flush=True)
+
     if total_size > 0:
-        downloaded += (s.size or 0)
+        downloaded += file_size
         units_done = downloaded
     else:
         units_done = idx

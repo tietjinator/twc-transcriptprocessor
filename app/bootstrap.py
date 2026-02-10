@@ -172,7 +172,7 @@ def _save_credentials(anthropic_key: str, openai_key: str | None) -> None:
         pass
 
 
-def _install_runtime(progress_cb=None, download_cb=None):
+def _install_runtime(progress_cb=None, download_cb=None, file_download_cb=None):
     installer = RUNTIME_DIR / "runtime_installer.py"
     reqs = RUNTIME_DIR / "requirements.txt"
     if not installer.exists() or not reqs.exists():
@@ -210,6 +210,18 @@ def _install_runtime(progress_cb=None, download_cb=None):
                         step_part, pct_part = payload.split(":", 1)
                         done, total = step_part.split("/", 1)
                         download_cb(int(done), int(total), int(pct_part))
+                    except Exception:
+                        pass
+                if line.startswith("TPP_FILE_START:") and file_download_cb:
+                    try:
+                        payload = line.split("TPP_FILE_START:", 1)[1]
+                        file_download_cb("start", json.loads(payload))
+                    except Exception:
+                        pass
+                if line.startswith("TPP_FILE_PROGRESS:") and file_download_cb:
+                    try:
+                        payload = line.split("TPP_FILE_PROGRESS:", 1)[1]
+                        file_download_cb("progress", json.loads(payload))
                     except Exception:
                         pass
     ret = proc.wait()
@@ -461,6 +473,7 @@ def run_bootstrap_ui():
 
     q = queue.Queue()
     worker_running = {"value": False}
+    active_model_file = {"value": None}
 
     def worker():
         worker_running["value"] = True
@@ -484,7 +497,9 @@ def run_bootstrap_ui():
                 q.put(("install_step", step, total, message))
             def download_cb(done, total, pct):
                 q.put(("install_download", done, total, pct))
-            _install_runtime(install_cb, download_cb)
+            def file_download_cb(kind, payload):
+                q.put(("install_file_download", kind, payload))
+            _install_runtime(install_cb, download_cb, file_download_cb)
             q.put(("status", "Installing system dependencies..."))
             def sys_cb(step, total, message):
                 q.put(("system_step", step, total, message))
@@ -541,6 +556,15 @@ def run_bootstrap_ui():
         fg="#555",
     )
     detail.pack(pady=(0, 4))
+
+    def _format_bytes(value: int) -> str:
+        if value >= 1024 ** 3:
+            return f"{value / (1024 ** 3):.2f} GB"
+        if value >= 1024 ** 2:
+            return f"{value / (1024 ** 2):.1f} MB"
+        if value >= 1024:
+            return f"{value / 1024:.1f} KB"
+        return f"{value} B"
 
     def ensure_api_keys() -> bool:
         cfg = _load_credentials()
@@ -695,20 +719,25 @@ def run_bootstrap_ui():
                     step, total, message = msg[1], msg[2], msg[3]
                     prog.stop()
                     if message.lower().startswith("downloading parakeet model"):
+                        active_model_file["value"] = None
                         prog.set(0)
-                        phase_var.set(message)
-                        detail_var.set("")
+                        phase_var.set("Downloading Parakeet model...")
+                        detail_var.set("Preparing file download...")
                     else:
+                        active_model_file["value"] = None
                         prog.set((step / total) * 100 if total else 0)
                         phase_var.set(message)
                         detail_var.set("")
                 elif msg[0] == "system_step":
                     step, total, message = msg[1], msg[2], msg[3]
                     prog.stop()
+                    active_model_file["value"] = None
                     prog.set((step / total) * 100 if total else 0)
                     phase_var.set(message)
                     detail_var.set("")
                 elif msg[0] == "install_download":
+                    if active_model_file["value"]:
+                        continue
                     done, total, pct = msg[1], msg[2], msg[3]
                     prog.stop()
                     prog.set(pct)
@@ -717,6 +746,35 @@ def run_bootstrap_ui():
                         detail_var.set(f"{pct}% • {done // (1024*1024)} MB / {total // (1024*1024)} MB")
                     else:
                         detail_var.set(f"{pct}% • {done} / {total} files")
+                elif msg[0] == "install_file_download":
+                    kind, payload = msg[1], msg[2]
+                    idx = int(payload.get("index") or 0)
+                    total_files = int(payload.get("total_files") or 0)
+                    file_name = str(payload.get("file") or "")
+                    if kind == "start":
+                        file_size = int(payload.get("size") or 0)
+                        active_model_file["value"] = file_name
+                        prog.stop()
+                        prog.set(0)
+                        phase_var.set(f"Downloading Parakeet model ({idx}/{total_files})")
+                        if file_size > 0:
+                            detail_var.set(f"{file_name} • 0% • 0 B / {_format_bytes(file_size)}")
+                        else:
+                            detail_var.set(f"{file_name} • starting...")
+                    elif kind == "progress":
+                        done = int(payload.get("done") or 0)
+                        total = int(payload.get("total") or 0)
+                        pct = int(payload.get("pct") or 0)
+                        active_model_file["value"] = file_name or active_model_file["value"]
+                        prog.stop()
+                        prog.set(pct)
+                        phase_var.set(f"Downloading Parakeet model ({idx}/{total_files})")
+                        if total > 0:
+                            detail_var.set(
+                                f"{file_name} • {pct}% • {_format_bytes(done)} / {_format_bytes(total)}"
+                            )
+                        else:
+                            detail_var.set(f"{file_name} • {pct}%")
                 elif msg[0] == "brew_missing":
                     _show_retry(True)
                     _show_brew(True)
@@ -724,6 +782,7 @@ def run_bootstrap_ui():
                     brew_btn.set_enabled(True)
                 elif msg[0] == "launch":
                     prog.stop()
+                    active_model_file["value"] = None
                     if not ensure_api_keys():
                         status_var.set("Setup complete, but API key missing.")
                         phase_var.set("")
@@ -753,6 +812,7 @@ def run_bootstrap_ui():
                         )
                 elif msg[0] == "error":
                     status_var.set("Setup failed.")
+                    active_model_file["value"] = None
                     phase_var.set("")
                     detail_var.set(f"{msg[1]}\n\nLog: {LOG_FILE}")
                     _show_retry(True)
@@ -770,6 +830,7 @@ def run_bootstrap_ui():
         brew_btn.set_enabled(False)
         phase_var.set("")
         detail_var.set("")
+        active_model_file["value"] = None
         prog.set(0)
         threading.Thread(target=worker, daemon=True).start()
 
