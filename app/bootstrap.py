@@ -541,6 +541,11 @@ def run_bootstrap_ui():
             def cb(downloaded, total):
                 q.put(("progress", downloaded, total))
 
+            q.put(("status", "Checking system dependencies..."))
+            def sys_cb(step, total, message):
+                q.put(("system_step", step, total, message))
+            _ensure_system_deps(sys_cb)
+
             log(f"Downloading runtime from {url}")
             q.put(("status", "Downloading runtime..."))
             _download_with_progress(url, payload, cb)
@@ -556,10 +561,6 @@ def run_bootstrap_ui():
             def file_download_cb(kind, payload):
                 q.put(("install_file_download", kind, payload))
             _install_runtime(install_cb, download_cb, file_download_cb)
-            q.put(("status", "Installing system dependencies..."))
-            def sys_cb(step, total, message):
-                q.put(("system_step", step, total, message))
-            _ensure_system_deps(sys_cb)
             q.put(("status", "Install complete. Launching app..."))
             q.put(("launch",))
         except Exception as e:
@@ -996,6 +997,8 @@ def run_bootstrap_cli():
     ensure_dirs()
     url = runtime_url()
     payload = APP_SUPPORT_DIR / "runtime_payload.tar.gz"
+    print("Checking system dependencies...")
+    _ensure_system_deps()
     print(f"Downloading runtime from {url}...")
 
     def cb(downloaded, total):
@@ -1010,8 +1013,6 @@ def run_bootstrap_cli():
     _chmod_runtime_bin()
     print("Installing dependencies...")
     _install_runtime()
-    print("Installing system dependencies...")
-    _ensure_system_deps()
     cfg = _load_credentials()
     if not (cfg.get("anthropic_api_key") or "").startswith("sk-ant-"):
         key = input("Enter your Anthropic API key (sk-ant-...): ").strip()
