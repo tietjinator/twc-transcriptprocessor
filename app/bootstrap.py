@@ -530,6 +530,7 @@ def run_bootstrap_ui():
     worker_running = {"value": False}
     active_model_file = {"value": None}
     active_model_pct = {"value": 0}
+    brew_prompted = {"value": False}
 
     def worker():
         worker_running["value"] = True
@@ -569,8 +570,9 @@ def run_bootstrap_ui():
             log(traceback.format_exc())
             msg = str(e)
             if msg.startswith("BREW_MISSING:"):
-                q.put(("brew_missing",))
-                msg = msg.split("BREW_MISSING:", 1)[1]
+                msg = msg.split("BREW_MISSING:", 1)[1].strip()
+                q.put(("brew_missing", msg))
+                return
             q.put(("error", msg))
         finally:
             worker_running["value"] = False
@@ -856,10 +858,30 @@ def run_bootstrap_ui():
                             else:
                                 detail_var.set(f"{file_name} • connecting... • {elapsed}s elapsed")
                 elif msg[0] == "brew_missing":
+                    status_var.set("Homebrew required.")
+                    phase_var.set("Install Homebrew to continue.")
+                    detail_var.set(
+                        f"{msg[1]}\n\n"
+                        "Steps:\n"
+                        "1. Click 'Install Homebrew' below\n"
+                        "2. Complete prompts in Terminal\n"
+                        "3. Return here and click 'Retry'\n\n"
+                        f"Log: {LOG_FILE}"
+                    )
+                    prog.stop()
+                    prog.set(0)
                     _show_retry(True)
                     _show_brew(True)
                     retry_btn.set_enabled(True)
                     brew_btn.set_enabled(True)
+                    if not brew_prompted["value"]:
+                        brew_prompted["value"] = True
+                        messagebox.showinfo(
+                            "Homebrew Required",
+                            "This app needs Homebrew to install FFmpeg and PDF dependencies.\n\n"
+                            "Click 'Install Homebrew', complete the Terminal prompts, then click 'Retry'.",
+                            parent=root,
+                        )
                 elif msg[0] == "launch":
                     prog.stop()
                     active_model_file["value"] = None
@@ -924,7 +946,12 @@ def run_bootstrap_ui():
             pass
 
     def install_homebrew():
-        cmd = '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+        cmd = (
+            'echo "Installing Homebrew..."; '
+            '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; '
+            'echo ""; '
+            'echo "When Homebrew finishes, return to Transcript Processor and click Retry."'
+        )
         _open_terminal_with_command(cmd)
 
     btn_frame = tk.Frame(root, bg="#f5f5f7")
@@ -998,7 +1025,17 @@ def run_bootstrap_cli():
     url = runtime_url()
     payload = APP_SUPPORT_DIR / "runtime_payload.tar.gz"
     print("Checking system dependencies...")
-    _ensure_system_deps()
+    try:
+        _ensure_system_deps()
+    except RuntimeError as exc:
+        msg = str(exc)
+        if msg.startswith("BREW_MISSING:"):
+            print(msg.split("BREW_MISSING:", 1)[1].strip())
+            print("")
+            print("Install Homebrew, then rerun setup:")
+            print('/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"')
+            return
+        raise
     print(f"Downloading runtime from {url}...")
 
     def cb(downloaded, total):
