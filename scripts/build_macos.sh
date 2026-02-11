@@ -9,6 +9,9 @@ VENV_DIR="$BUILD_DIR/venv-build"
 BUILD_PYTHON="${TPP_BUILD_PYTHON:-}"
 RUNTIME_PYTHON="$BUILD_DIR/runtime/python/bin/python3.12"
 VENV_PY_MARKER="$VENV_DIR/.build_python"
+APP_NAME="Transcript Processor.app"
+DMG_NAME="Transcript_Processor.dmg"
+DMG_VOLUME_NAME="Transcript Processor"
 
 echo "Project: $PROJECT_ROOT"
 echo "Build dir: $BUILD_DIR"
@@ -86,4 +89,62 @@ fi
   --workpath "$BUILD_DIR/pyinstaller" \
   "$PROJECT_ROOT/scripts/pyinstaller.spec"
 
+APP_PATH="$BUILD_DIR/dist/$APP_NAME"
+if [ ! -d "$APP_PATH" ]; then
+  echo "App bundle not found at $APP_PATH"
+  exit 1
+fi
+
+DMG_STAGING="$BUILD_DIR/dmg"
+DMG_BACKGROUND_DIR="$DMG_STAGING/.background"
+DMG_BACKGROUND="$DMG_BACKGROUND_DIR/background.png"
+TMP_DMG="$BUILD_DIR/Transcript_Processor_tmp.dmg"
+FINAL_DMG="$BUILD_DIR/$DMG_NAME"
+
+mkdir -p "$DMG_BACKGROUND_DIR"
+rm -rf "$DMG_STAGING/$APP_NAME"
+cp -R "$APP_PATH" "$DMG_STAGING/$APP_NAME"
+ln -sfn /Applications "$DMG_STAGING/Applications"
+
+/usr/bin/swift "$PROJECT_ROOT/scripts/generate_dmg_background.swift" "$DMG_BACKGROUND"
+
+rm -f "$TMP_DMG" "$FINAL_DMG"
+hdiutil create -volname "$DMG_VOLUME_NAME" -srcfolder "$DMG_STAGING" -ov -format UDRW "$TMP_DMG" >/dev/null
+
+ATTACH_OUTPUT="$(hdiutil attach -readwrite -noverify -noautoopen "$TMP_DMG")"
+MOUNT_POINT="$(echo "$ATTACH_OUTPUT" | awk -F '\t' '/\/Volumes\// {print $NF; exit}')"
+if [ -z "$MOUNT_POINT" ]; then
+  echo "Failed to mount temporary DMG."
+  exit 1
+fi
+
+osascript <<APPLESCRIPT
+tell application "Finder"
+  tell disk "$DMG_VOLUME_NAME"
+    open
+    set current view of container window to icon view
+    set toolbar visible of container window to false
+    set statusbar visible of container window to false
+    set bounds of container window to {120, 120, 800, 540}
+    set viewOptions to the icon view options of container window
+    set arrangement of viewOptions to not arranged
+    set icon size of viewOptions to 128
+    set text size of viewOptions to 14
+    set background picture of viewOptions to file ".background:background.png"
+    set position of item "Transcript Processor.app" of container window to {170, 220}
+    set position of item "Applications" of container window to {510, 220}
+    close
+    open
+    update without registering applications
+    delay 1
+  end tell
+end tell
+APPLESCRIPT
+
+hdiutil detach "$MOUNT_POINT" -quiet
+hdiutil convert "$TMP_DMG" -format UDZO -imagekey zlib-level=9 -ov -o "$FINAL_DMG" >/dev/null
+rm -f "$TMP_DMG"
+
 echo "Build complete."
+echo "App: $APP_PATH"
+echo "DMG: $FINAL_DMG"
