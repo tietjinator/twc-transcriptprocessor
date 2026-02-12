@@ -6,7 +6,7 @@ BUILD_DIR="$PROJECT_ROOT/build"
 
 MANIFEST_OUT="${TPP_RUNTIME_MANIFEST_OUT:-$BUILD_DIR/runtime_manifest.json}"
 PAYLOAD_PATH="${TPP_RUNTIME_PAYLOAD_PATH:-$BUILD_DIR/runtime_payload.tar.gz}"
-PAYLOAD_URL="${TPP_RUNTIME_PAYLOAD_URL:-https://github.com/tietjinator/twc-transcriptprocessor/releases/download/v0.1.0/runtime_payload.tar.gz}"
+PAYLOAD_URL="${TPP_RUNTIME_PAYLOAD_URL:-https://github.com/tietjinator/twc-transcriptprocessor/releases/download/v0.1.5/runtime_payload.tar.gz}"
 PUBLISHED_AT="${TPP_RUNTIME_PUBLISHED_AT:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}"
 RUNTIME_VERSION="${TPP_RUNTIME_VERSION:-}"
 

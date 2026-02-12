@@ -11,7 +11,7 @@ RUNTIME_VENV_PY = RUNTIME_DIR / "venv" / "bin" / "python"
 INSTALL_MARKER = RUNTIME_DIR / ".installed"
 RUNTIME_VERSION_MARKER = RUNTIME_DIR / ".runtime_version"
 RUNTIME_VERSION = "0.1.5"
-RUNTIME_MANIFEST_URL = "https://github.com/tietjinator/twc-transcriptprocessor/releases/download/v0.1.0/runtime_manifest.json"
+RUNTIME_MANIFEST_URL = "https://github.com/tietjinator/twc-transcriptprocessor/releases/download/v0.1.5/runtime_manifest.json"
 
 
 def runtime_installed() -> bool:
@@ -44,7 +44,7 @@ def runtime_url() -> str:
     # Override with environment variable in production
     return os.environ.get(
         "TPP_RUNTIME_URL",
-        "https://github.com/tietjinator/twc-transcriptprocessor/releases/download/v0.1.0/runtime_payload.tar.gz",
+        "https://github.com/tietjinator/twc-transcriptprocessor/releases/download/v0.1.5/runtime_payload.tar.gz",
     )
 
 
