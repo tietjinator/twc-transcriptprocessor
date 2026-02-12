@@ -65,11 +65,21 @@ def main():
         run_bootstrap_ui()
         return 0
 
-    decision = run_startup_update_flow()
+    # Preflight only: decide if an update is needed without doing hidden long-running work.
+    decision = run_startup_update_flow(perform_update=False)
     if decision.action in ("launch_current", "updated_and_launch"):
         rc = launch_real_app()
         if rc != 0:
             run_bootstrap_ui()
+        return 0
+    if decision.action == "update_required":
+        manifest = decision.manifest or {}
+        run_bootstrap_ui(
+            payload_url=manifest.get("payload_url"),
+            expected_sha256=manifest.get("payload_sha256"),
+            target_runtime_version=manifest.get("runtime_version") or "0.0.0",
+            mode="update",
+        )
         return 0
     if decision.action == "bootstrap_required":
         run_bootstrap_ui()

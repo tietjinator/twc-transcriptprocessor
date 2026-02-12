@@ -77,6 +77,7 @@ class UpdateDecision:
     action: str
     messages: list[str]
     error: str | None = None
+    manifest: dict | None = None
 
 
 def _now_iso() -> str:
@@ -216,20 +217,22 @@ def atomic_swap_runtime(staging_dir: Path, active_dir: Path) -> None:
         shutil.rmtree(backup_dir)
 
 
-def run_startup_update_flow() -> UpdateDecision:
+def run_startup_update_flow(perform_update: bool = True) -> UpdateDecision:
     messages: list[str] = []
     state: dict = {"checked_at": _now_iso()}
     local_version = _read_local_runtime_version()
     local_compare_version = _normalize_compare_version(local_version)
     state["local_version"] = local_version
 
-    def finalize(action: str, error: str | None = None) -> UpdateDecision:
+    def finalize(action: str, error: str | None = None, manifest: dict | None = None) -> UpdateDecision:
         state["action"] = action
         if error:
             state["error"] = error
+        if manifest:
+            state["manifest"] = manifest
         _write_startup_update_log(messages)
         _write_update_state(state)
-        return UpdateDecision(action=action, messages=messages.copy(), error=error)
+        return UpdateDecision(action=action, messages=messages.copy(), error=error, manifest=manifest)
 
     if not runtime_installed():
         messages.append("Update Check: no runtime installed, running setup.")
@@ -265,6 +268,16 @@ def run_startup_update_flow() -> UpdateDecision:
         return finalize("launch_current")
 
     messages.append(f"Update Check: update available {local_version} -> {remote_version}")
+    if not perform_update:
+        return finalize(
+            "update_required",
+            manifest={
+                "runtime_version": remote_version,
+                "payload_url": payload_url,
+                "payload_sha256": payload_sha,
+            },
+        )
+
     messages.append("Update Check: downloading runtime payload...")
     try:
         download_payload_with_hash(payload_url, payload_sha, UPDATE_PAYLOAD_FILE)

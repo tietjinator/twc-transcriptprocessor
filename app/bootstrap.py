@@ -12,6 +12,7 @@ import json
 import shutil
 import ssl
 import sys
+import hashlib
 from datetime import datetime
 from pathlib import Path
 
@@ -96,6 +97,35 @@ def _download_with_progress(url: str, dest: Path, progress_cb):
             _download_with_curl(url, dest, progress_cb)
             return
         raise
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        while True:
+            chunk = f.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest().lower()
+
+
+def _download_runtime_payload(
+    url: str,
+    dest: Path,
+    progress_cb,
+    expected_sha256: str | None = None,
+) -> None:
+    _download_with_progress(url, dest, progress_cb)
+    if not expected_sha256:
+        return
+    expected = expected_sha256.strip().lower()
+    actual = _sha256_file(dest)
+    if actual != expected:
+        raise RuntimeError(
+            "Runtime payload integrity check failed. "
+            f"Expected SHA-256 {expected}, got {actual}."
+        )
 
 
 def _extract_tar(tar_path: Path, dest_dir: Path):
@@ -388,7 +418,12 @@ def _restart_transcript_processor() -> tuple[bool, str]:
     return False, reason or "Unable to relaunch app."
 
 
-def run_bootstrap_ui():
+def run_bootstrap_ui(
+    payload_url: str | None = None,
+    expected_sha256: str | None = None,
+    target_runtime_version: str = RUNTIME_VERSION,
+    mode: str = "setup",
+):
     try:
         import tkinter as tk
         from tkinter import messagebox
@@ -604,7 +639,7 @@ def run_bootstrap_ui():
         worker_running["value"] = True
         try:
             ensure_dirs()
-            url = runtime_url()
+            url = payload_url or runtime_url()
             payload = APP_SUPPORT_DIR / "runtime_payload.tar.gz"
 
             def cb(downloaded, total):
@@ -616,8 +651,8 @@ def run_bootstrap_ui():
             _ensure_system_deps(sys_cb)
 
             log(f"Downloading runtime from {url}")
-            q.put(("status", "Downloading runtime..."))
-            _download_with_progress(url, payload, cb)
+            q.put(("status", "Downloading update..." if mode == "update" else "Downloading runtime..."))
+            _download_runtime_payload(url, payload, cb, expected_sha256=expected_sha256)
             q.put(("status", "Extracting runtime..."))
             q.put(("status", "Installing dependencies..."))
             def install_cb(step, total, message):
@@ -632,9 +667,9 @@ def run_bootstrap_ui():
                 progress_cb=install_cb,
                 download_cb=download_cb,
                 file_download_cb=file_download_cb,
-                runtime_version=RUNTIME_VERSION,
+                runtime_version=target_runtime_version,
             )
-            q.put(("status", "Install complete. Launching app..."))
+            q.put(("status", "Update complete. Launching app..." if mode == "update" else "Install complete. Launching app..."))
             q.put(("launch",))
         except Exception as e:
             log("Setup failed.")
@@ -650,10 +685,19 @@ def run_bootstrap_ui():
             worker_running["value"] = False
 
     root = tk.Tk()
-    root.title("Transcript Processor — Setup")
-    root.geometry("520x360")
-    root.minsize(520, 360)
+    root.title("Transcript Processor — Update" if mode == "update" else "Transcript Processor — Setup")
+    width, height = 520, 360
+    screen_w = root.winfo_screenwidth()
+    screen_h = root.winfo_screenheight()
+    pos_x = max(0, (screen_w - width) // 2)
+    pos_y = max(0, (screen_h - height) // 2 - 30)
+    root.geometry(f"{width}x{height}+{pos_x}+{pos_y}")
+    root.minsize(width, height)
     root.configure(bg="#f5f5f7")
+    root.lift()
+    root.focus_force()
+    root.after(200, lambda: root.attributes("-topmost", True))
+    root.after(800, lambda: root.attributes("-topmost", False))
 
     status_var = tk.StringVar(value="Preparing...")
     status = tk.Label(
@@ -965,8 +1009,12 @@ def run_bootstrap_ui():
                         _show_retry(True)
                         retry_btn.set_enabled(True)
                         continue
-                    status_var.set("Setup complete.")
-                    phase_var.set("Dependencies installed successfully.")
+                    status_var.set("Update complete." if mode == "update" else "Setup complete.")
+                    phase_var.set(
+                        "Dependencies updated successfully."
+                        if mode == "update"
+                        else "Dependencies installed successfully."
+                    )
                     detail_var.set("Click 'Restart Transcript Processor' to finish setup.")
                     _show_retry(False)
                     _show_brew(False)
