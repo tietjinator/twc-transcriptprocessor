@@ -122,10 +122,11 @@ class TranscriptProcessorApp:
     def __init__(self):
         runtime_root = Path(__file__).resolve().parents[2]
         self.startup_update_log_path = runtime_root.parent / "startup_update_log.jsonl"
-        model_cache = runtime_root / "models" / "huggingface"
+        model_cache = Path.home() / "Library" / "Application Support" / "Transcript Processor" / "models" / "huggingface"
         model_cache.mkdir(parents=True, exist_ok=True)
         os.environ.setdefault("HUGGINGFACE_HUB_CACHE", str(model_cache))
         os.environ.setdefault("HF_HOME", str(model_cache))
+        os.environ.setdefault("TPP_MODEL_CACHE_DIR", str(model_cache))
 
         # Skip first-time setup - launch directly
         # if needs_setup():
@@ -183,7 +184,7 @@ class TranscriptProcessorApp:
             return
 
         self.setup_ui()
-        self.log("Runtime build: 0.1.6")
+        self.log("Runtime build: 0.1.7")
         self.load_startup_update_log()
         self.check_services_on_startup()
         # Start periodic log flushing on the UI thread.

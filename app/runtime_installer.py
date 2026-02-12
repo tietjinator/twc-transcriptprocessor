@@ -44,8 +44,9 @@ def main() -> int:
     _emit_step(3, total_steps, "Installing Python dependencies")
     subprocess.run([str(pip), "install", "-r", str(reqs)], check=True)
 
-    _emit_step(4, total_steps, "Downloading Parakeet model (first run)")
-    model_cache = runtime_dir / "models" / "huggingface"
+    _emit_step(4, total_steps, "Ensuring Parakeet model availability")
+    default_model_cache = Path.home() / "Library" / "Application Support" / "Transcript Processor" / "models" / "huggingface"
+    model_cache = Path(os.environ.get("TPP_MODEL_CACHE_DIR", str(default_model_cache)))
     model_cache.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
     env["HUGGINGFACE_HUB_CACHE"] = str(model_cache)

@@ -5,12 +5,12 @@ import subprocess
 import os
 
 try:
-    from app.runtime import runtime_installed, RUNTIME_DIR, RUNTIME_VENV_PY
+    from app.runtime import MODEL_CACHE_DIR, runtime_installed, RUNTIME_DIR, RUNTIME_VENV_PY
     from app.bootstrap import run_bootstrap_ui
     from app.updater import run_startup_update_flow, STARTUP_UPDATE_LOG
 except Exception:
     # Fallback for running as a script from the app/ directory
-    from runtime import runtime_installed, RUNTIME_DIR, RUNTIME_VENV_PY  # type: ignore
+    from runtime import MODEL_CACHE_DIR, runtime_installed, RUNTIME_DIR, RUNTIME_VENV_PY  # type: ignore
     from bootstrap import run_bootstrap_ui  # type: ignore
     from updater import run_startup_update_flow, STARTUP_UPDATE_LOG  # type: ignore
 
@@ -38,6 +38,10 @@ def launch_real_app():
     fallback_libs = ["/opt/homebrew/lib", "/usr/local/lib"]
     existing = env.get("DYLD_FALLBACK_LIBRARY_PATH", "")
     env["DYLD_FALLBACK_LIBRARY_PATH"] = ":".join(fallback_libs + ([existing] if existing else []))
+    MODEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    env["HUGGINGFACE_HUB_CACHE"] = str(MODEL_CACHE_DIR)
+    env["HF_HOME"] = str(MODEL_CACHE_DIR)
+    env["TPP_MODEL_CACHE_DIR"] = str(MODEL_CACHE_DIR)
 
     subprocess.Popen([str(RUNTIME_VENV_PY), str(app_entry)], cwd=str(RUNTIME_DIR / "app"), env=env)
     return 0

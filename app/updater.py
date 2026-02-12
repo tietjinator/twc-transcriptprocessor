@@ -24,6 +24,7 @@ try:
     )
     from app.runtime import (
         APP_SUPPORT_DIR,
+        MODEL_CACHE_DIR,
         RUNTIME_DIR,
         installed_runtime_version,
         is_remote_newer,
@@ -43,6 +44,7 @@ except Exception:
     )
     from runtime import (  # type: ignore
         APP_SUPPORT_DIR,
+        MODEL_CACHE_DIR,
         RUNTIME_DIR,
         installed_runtime_version,
         is_remote_newer,
@@ -181,11 +183,25 @@ def download_payload_with_hash(url: str, expected_sha256: str, dest: Path, progr
         raise IntegrityError(f"Payload hash mismatch. expected={expected} actual={actual}")
 
 
+def _seed_shared_model_cache() -> None:
+    legacy_cache = RUNTIME_DIR / "models" / "huggingface"
+    if MODEL_CACHE_DIR.exists() or not legacy_cache.exists():
+        return
+    MODEL_CACHE_DIR.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        legacy_cache.rename(MODEL_CACHE_DIR)
+        return
+    except Exception:
+        pass
+    shutil.copytree(legacy_cache, MODEL_CACHE_DIR, dirs_exist_ok=True)
+
+
 def install_runtime_from_payload(payload_path: Path, runtime_version: str) -> None:
     staging_dir = APP_SUPPORT_DIR / f"runtime_staging_{os.getpid()}"
     if staging_dir.exists():
         shutil.rmtree(staging_dir)
 
+    _seed_shared_model_cache()
     _extract_tar(payload_path, staging_dir)
     _clear_quarantine(staging_dir)
     _chmod_runtime_bin(staging_dir)

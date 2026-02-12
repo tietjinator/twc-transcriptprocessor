@@ -16,7 +16,7 @@ import hashlib
 from datetime import datetime
 from pathlib import Path
 
-from .runtime import APP_SUPPORT_DIR, RUNTIME_DIR, RUNTIME_VERSION, runtime_url, ensure_dirs
+from .runtime import APP_SUPPORT_DIR, MODEL_CACHE_DIR, RUNTIME_DIR, RUNTIME_VERSION, runtime_url, ensure_dirs
 
 RUNTIME_VENV_PY = RUNTIME_DIR / "venv" / "bin" / "python"
 RUNTIME_APP_ENTRY = RUNTIME_DIR / "app" / "src" / "mac_app_modern.py"
@@ -285,7 +285,19 @@ def _install_runtime(
         "--runtime-version",
         runtime_version,
     ]
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+    MODEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    env = os.environ.copy()
+    env["HUGGINGFACE_HUB_CACHE"] = str(MODEL_CACHE_DIR)
+    env["HF_HOME"] = str(MODEL_CACHE_DIR)
+    env["TPP_MODEL_CACHE_DIR"] = str(MODEL_CACHE_DIR)
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        env=env,
+    )
     last_lines = []
     if proc.stdout:
         for line in proc.stdout:
@@ -382,9 +394,11 @@ def _launch_runtime_app() -> tuple[bool, str]:
         fallback_libs = ["/opt/homebrew/lib", "/usr/local/lib"]
         existing = env.get("DYLD_FALLBACK_LIBRARY_PATH", "")
         env["DYLD_FALLBACK_LIBRARY_PATH"] = ":".join(fallback_libs + ([existing] if existing else []))
-        model_cache = RUNTIME_DIR / "models" / "huggingface"
+        model_cache = MODEL_CACHE_DIR
+        model_cache.mkdir(parents=True, exist_ok=True)
         env["HUGGINGFACE_HUB_CACHE"] = str(model_cache)
         env["HF_HOME"] = str(model_cache)
+        env["TPP_MODEL_CACHE_DIR"] = str(model_cache)
 
         subprocess.Popen([str(py), str(RUNTIME_APP_ENTRY)], cwd=str(RUNTIME_DIR / "app"), env=env)
         return True, ""
