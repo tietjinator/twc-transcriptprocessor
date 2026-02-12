@@ -20,11 +20,13 @@ Full install guide: `INSTALL.md`
 
 ## How It Works
 1. User double‑clicks the app.
-2. The bootstrap UI downloads `runtime_payload.tar.gz` from GitHub Releases.
-3. The runtime is extracted into:
+2. On every launch, the bootstrap app checks `runtime_manifest.json` for runtime updates.
+3. If a newer runtime is available, it downloads `runtime_payload.tar.gz`, verifies SHA‑256 integrity, installs, and relaunches.
+4. If offline and a valid runtime is already installed, it launches using the installed runtime.
+5. The runtime is extracted into:
    `~/Library/Application Support/Transcript Processor/runtime`
-4. Dependencies are installed in a venv.
-5. The real app launches automatically.
+6. Dependencies are installed in a venv.
+7. The real app launches automatically.
 
 ## Build (Local)
 ### Build the runtime payload
@@ -42,11 +44,22 @@ bash "./scripts/build_macos.sh"
 Output:
 - App bundle: `build/dist/Transcript Processor.app`
 - Payload: `build/runtime_payload.tar.gz`
+- Payload hash file: `build/runtime_payload.sha256`
 
-## Publish Payload
+### Build runtime manifest
+```bash
+bash "./scripts/build_runtime_manifest.sh"
+```
+
+Output:
+- Manifest: `build/runtime_manifest.json`
+
+## Publish Release Assets
 ```bash
 gh release upload v0.1.0 \
   "./build/runtime_payload.tar.gz" \
+  "./build/runtime_manifest.json" \
+  "./build/Transcript_Processor.dmg" \
   --repo tietjinator/twc-transcriptprocessor --clobber
 ```
 
@@ -71,9 +84,12 @@ This project depends on the following excellent open‑source projects and servi
 All trademarks and licenses remain with their respective owners. This project is not affiliated with these providers.
 
 ## Notes
-- Runtime downloads are controlled by `TPP_RUNTIME_URL` in `app/runtime.py`.
+- Runtime manifest URL is controlled by `TPP_RUNTIME_MANIFEST_URL`.
+- Payload URL fallback is controlled by `TPP_RUNTIME_URL`.
 - The bootstrap log lives at:
   `~/Library/Logs/Transcript Processor/bootstrap.log`
+- Startup update check log (surfaced in Activity Log):
+  `~/Library/Application Support/Transcript Processor/startup_update_log.jsonl`
 
 ## Security
 - API keys are **not** stored in the app bundle.

@@ -8,6 +8,7 @@ PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_DIR="$PROJECT_ROOT/build"
 RUNTIME_DIR="$BUILD_DIR/runtime"
 PAYLOAD_OUT="$BUILD_DIR/runtime_payload.tar.gz"
+PAYLOAD_SHA_OUT="$BUILD_DIR/runtime_payload.sha256"
 REQS_PATH="${TPP_REQUIREMENTS:-}"
 APP_SRC_ROOT="${TPP_APP_SRC_ROOT:-}"
 PYBS_URL="${TPP_PYBS_URL:-}"
@@ -118,4 +119,8 @@ fi
 cd "$RUNTIME_DIR"
 tar -czf "$PAYLOAD_OUT" .
 
+PAYLOAD_SHA="$(shasum -a 256 "$PAYLOAD_OUT" | awk '{print $1}')"
+echo "$PAYLOAD_SHA  runtime_payload.tar.gz" > "$PAYLOAD_SHA_OUT"
+
 echo "Payload written to $PAYLOAD_OUT"
+echo "Payload SHA256 written to $PAYLOAD_SHA_OUT"

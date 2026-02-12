@@ -15,7 +15,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from .runtime import APP_SUPPORT_DIR, RUNTIME_DIR, RUNTIME_PYTHON, RUNTIME_VERSION, runtime_url, ensure_dirs
+from .runtime import APP_SUPPORT_DIR, RUNTIME_DIR, RUNTIME_VERSION, runtime_url, ensure_dirs
 
 RUNTIME_VENV_PY = RUNTIME_DIR / "venv" / "bin" / "python"
 RUNTIME_APP_ENTRY = RUNTIME_DIR / "app" / "src" / "mac_app_modern.py"
@@ -118,8 +118,8 @@ def _clear_quarantine(path: Path) -> None:
         pass
 
 
-def _chmod_runtime_bin() -> None:
-    bin_dir = RUNTIME_DIR / "python" / "bin"
+def _chmod_runtime_bin(runtime_dir: Path = RUNTIME_DIR) -> None:
+    bin_dir = runtime_dir / "python" / "bin"
     if not bin_dir.exists():
         return
     try:
@@ -228,21 +228,32 @@ def _save_credentials(anthropic_key: str, openai_key: str | None) -> None:
         pass
 
 
-def _install_runtime(progress_cb=None, download_cb=None, file_download_cb=None):
-    installer = RUNTIME_DIR / "runtime_installer.py"
-    reqs = RUNTIME_DIR / "requirements.txt"
+def _install_runtime(
+    progress_cb=None,
+    download_cb=None,
+    file_download_cb=None,
+    runtime_dir: Path = RUNTIME_DIR,
+    runtime_python: Path | None = None,
+    runtime_version: str = RUNTIME_VERSION,
+):
+    installer = runtime_dir / "runtime_installer.py"
+    reqs = runtime_dir / "requirements.txt"
     if not installer.exists() or not reqs.exists():
         raise RuntimeError("Runtime installer or requirements.txt missing in payload.")
 
+    py = runtime_python or (runtime_dir / "python" / "bin" / "python3")
+    if not py.exists():
+        raise RuntimeError(f"Runtime Python not found at {py}")
+
     cmd = [
-        str(RUNTIME_PYTHON),
+        str(py),
         str(installer),
         "--runtime-dir",
-        str(RUNTIME_DIR),
+        str(runtime_dir),
         "--requirements",
         str(reqs),
         "--runtime-version",
-        RUNTIME_VERSION,
+        runtime_version,
     ]
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
     last_lines = []
@@ -291,6 +302,27 @@ def _install_runtime(progress_cb=None, download_cb=None, file_download_cb=None):
     ret = proc.wait()
     if ret != 0:
         raise RuntimeError("\n".join(last_lines) or "Runtime install failed.")
+
+
+def install_payload_to_runtime(
+    payload_path: Path,
+    target_runtime_dir: Path = RUNTIME_DIR,
+    progress_cb=None,
+    download_cb=None,
+    file_download_cb=None,
+    runtime_version: str = RUNTIME_VERSION,
+):
+    _extract_tar(payload_path, target_runtime_dir)
+    _clear_quarantine(target_runtime_dir)
+    _chmod_runtime_bin(target_runtime_dir)
+    _install_runtime(
+        progress_cb=progress_cb,
+        download_cb=download_cb,
+        file_download_cb=file_download_cb,
+        runtime_dir=target_runtime_dir,
+        runtime_python=target_runtime_dir / "python" / "bin" / "python3",
+        runtime_version=runtime_version,
+    )
 
 
 def _launch_runtime_app() -> tuple[bool, str]:
@@ -587,9 +619,6 @@ def run_bootstrap_ui():
             q.put(("status", "Downloading runtime..."))
             _download_with_progress(url, payload, cb)
             q.put(("status", "Extracting runtime..."))
-            _extract_tar(payload, RUNTIME_DIR)
-            _clear_quarantine(RUNTIME_DIR)
-            _chmod_runtime_bin()
             q.put(("status", "Installing dependencies..."))
             def install_cb(step, total, message):
                 q.put(("install_step", step, total, message))
@@ -597,7 +626,14 @@ def run_bootstrap_ui():
                 q.put(("install_download", done, total, pct))
             def file_download_cb(kind, payload):
                 q.put(("install_file_download", kind, payload))
-            _install_runtime(install_cb, download_cb, file_download_cb)
+            install_payload_to_runtime(
+                payload_path=payload,
+                target_runtime_dir=RUNTIME_DIR,
+                progress_cb=install_cb,
+                download_cb=download_cb,
+                file_download_cb=file_download_cb,
+                runtime_version=RUNTIME_VERSION,
+            )
             q.put(("status", "Install complete. Launching app..."))
             q.put(("launch",))
         except Exception as e:
@@ -1109,11 +1145,12 @@ def run_bootstrap_cli():
 
     _download_with_progress(url, payload, cb)
     print("\nExtracting runtime...")
-    _extract_tar(payload, RUNTIME_DIR)
-    _clear_quarantine(RUNTIME_DIR)
-    _chmod_runtime_bin()
     print("Installing dependencies...")
-    _install_runtime()
+    install_payload_to_runtime(
+        payload_path=payload,
+        target_runtime_dir=RUNTIME_DIR,
+        runtime_version=RUNTIME_VERSION,
+    )
     cfg = _load_credentials()
     if not (cfg.get("anthropic_api_key") or "").startswith("sk-ant-"):
         key = input("Enter your Anthropic API key (sk-ant-...): ").strip()

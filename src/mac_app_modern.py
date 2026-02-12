@@ -121,6 +121,7 @@ class TranscriptProcessorApp:
 
     def __init__(self):
         runtime_root = Path(__file__).resolve().parents[2]
+        self.startup_update_log_path = runtime_root.parent / "startup_update_log.jsonl"
         model_cache = runtime_root / "models" / "huggingface"
         model_cache.mkdir(parents=True, exist_ok=True)
         os.environ.setdefault("HUGGINGFACE_HUB_CACHE", str(model_cache))
@@ -182,9 +183,44 @@ class TranscriptProcessorApp:
             return
 
         self.setup_ui()
+        self.load_startup_update_log()
         self.check_services_on_startup()
         # Start periodic log flushing on the UI thread.
         self.root.after(100, self._flush_log_queue)
+
+    def load_startup_update_log(self):
+        """Read startup update events produced by bootstrap and append to activity log."""
+        path = self.startup_update_log_path
+        if not path.exists():
+            return
+
+        messages = []
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        payload = json.loads(line)
+                        msg = str(payload.get("message", "")).strip()
+                    except Exception:
+                        msg = line
+                    if msg:
+                        messages.append(msg)
+        except Exception as exc:
+            messages = [f"Update Check: could not read startup update log ({exc})"]
+        finally:
+            try:
+                path.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+        if messages:
+            self.log("Update Check:")
+            for msg in messages:
+                self.log(f"  {msg}")
+            self.log("")
 
     def _save_api_keys(self, anthropic_key: str, openai_key: str | None) -> Path:
         config = {}

@@ -13,6 +13,9 @@ Get the latest DMG from GitHub Releases:
 - Double‑click the app in **Applications**.
 - The app will download and install its runtime on first run.
 - You must be online during the first launch.
+- On later launches, the app checks for runtime updates automatically.
+- If you are offline and already have a valid runtime installed, it launches normally.
+- If an update payload fails integrity checks, launch is blocked and a remediation message is shown.
 
 ## 4) Gatekeeper (if prompted)
 If macOS blocks the app:
@@ -23,6 +26,9 @@ If macOS blocks the app:
 ## Logs
 Bootstrap log:
 - `~/Library/Logs/Transcript Processor/bootstrap.log`
+
+Startup update log:
+- `~/Library/Application Support/Transcript Processor/startup_update_log.jsonl`
 
 ## Uninstall
 1. Delete **Transcript Processor.app** from Applications.

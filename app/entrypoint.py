@@ -5,12 +5,14 @@ import subprocess
 import os
 
 try:
-    from app.runtime import runtime_exists, RUNTIME_DIR, RUNTIME_VENV_PY
+    from app.runtime import runtime_installed, RUNTIME_DIR, RUNTIME_VENV_PY
     from app.bootstrap import run_bootstrap_ui
+    from app.updater import run_startup_update_flow, STARTUP_UPDATE_LOG
 except Exception:
     # Fallback for running as a script from the app/ directory
-    from runtime import runtime_exists, RUNTIME_DIR, RUNTIME_VENV_PY  # type: ignore
+    from runtime import runtime_installed, RUNTIME_DIR, RUNTIME_VENV_PY  # type: ignore
     from bootstrap import run_bootstrap_ui  # type: ignore
+    from updater import run_startup_update_flow, STARTUP_UPDATE_LOG  # type: ignore
 
 
 def launch_real_app():
@@ -41,12 +43,42 @@ def launch_real_app():
     return 0
 
 
+def _show_launch_blocked(message: str):
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror(
+            "Transcript Processor - Launch Blocked",
+            message + f"\n\nUpdate log:\n{STARTUP_UPDATE_LOG}",
+        )
+        root.destroy()
+    except Exception:
+        print("Launch blocked:", message)
+        print("Update log:", STARTUP_UPDATE_LOG)
+
+
 def main():
-    if runtime_exists():
-        launch_real_app()
+    if not runtime_installed():
+        run_bootstrap_ui()
         return 0
 
-    run_bootstrap_ui()
+    decision = run_startup_update_flow()
+    if decision.action in ("launch_current", "updated_and_launch"):
+        rc = launch_real_app()
+        if rc != 0:
+            run_bootstrap_ui()
+        return 0
+    if decision.action == "bootstrap_required":
+        run_bootstrap_ui()
+        return 0
+    if decision.action == "launch_blocked":
+        _show_launch_blocked(decision.error or "Runtime update integrity check failed.")
+        return 1
+
+    launch_real_app()
     return 0
 
 
