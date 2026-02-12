@@ -11,7 +11,7 @@ RUNTIME_PYTHON = RUNTIME_DIR / "python" / "bin" / "python3"
 RUNTIME_VENV_PY = RUNTIME_DIR / "venv" / "bin" / "python"
 INSTALL_MARKER = RUNTIME_DIR / ".installed"
 RUNTIME_VERSION_MARKER = RUNTIME_DIR / ".runtime_version"
-RUNTIME_VERSION = "0.1.8"
+RUNTIME_VERSION = "0.1.9"
 RUNTIME_MANIFEST_URL = "https://github.com/tietjinator/twc-transcriptprocessor/releases/download/v0.1.5/runtime_manifest.json"
 
 

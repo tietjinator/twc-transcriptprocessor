@@ -12,7 +12,7 @@ import json
 import os
 import re
 from PIL import Image, ImageTk
-from config import load_api_key, HOME_CONFIG_FILE
+from config import load_api_key, HOME_CONFIG_FILE, PARAKEET_MODEL
 # from first_time_setup import needs_setup, run_setup  # Disabled - skip setup wizard
 
 
@@ -122,8 +122,12 @@ class TranscriptProcessorApp:
     def __init__(self):
         runtime_root = Path(__file__).resolve().parents[2]
         self.startup_update_log_path = runtime_root.parent / "startup_update_log.jsonl"
+        self.model_update_state_path = (
+            Path.home() / "Library" / "Application Support" / "Transcript Processor" / "model_update_state.json"
+        )
         model_cache = Path.home() / "Library" / "Application Support" / "Transcript Processor" / "models" / "huggingface"
         model_cache.mkdir(parents=True, exist_ok=True)
+        self.model_cache = model_cache
         os.environ.setdefault("HUGGINGFACE_HUB_CACHE", str(model_cache))
         os.environ.setdefault("HF_HOME", str(model_cache))
         os.environ.setdefault("TPP_MODEL_CACHE_DIR", str(model_cache))
@@ -184,9 +188,10 @@ class TranscriptProcessorApp:
             return
 
         self.setup_ui()
-        self.log("Runtime build: 0.1.8")
+        self.log("Runtime build: 0.1.9")
         self.load_startup_update_log()
         self.check_services_on_startup()
+        self.root.after(700, self.start_model_update_check)
         # Start periodic log flushing on the UI thread.
         self.root.after(100, self._flush_log_queue)
 
@@ -644,6 +649,11 @@ class TranscriptProcessorApp:
         self.activity_animation_running = False
         self.activity_dots = 0
         self.processing_active = False
+        self.model_update_in_progress = False
+        self.model_update_prompt = None
+        self.pending_model_prompt = None
+        self.pending_model_update_sha = None
+        self.model_check_running = False
         self.ready_reset_after_id = None
         self.idle_status = ("Ready", "#e8e8ed", "#1d1d1f")
 
@@ -662,6 +672,202 @@ class TranscriptProcessorApp:
     def _schedule_idle_reset(self, delay_ms: int = 2500):
         self._cancel_idle_reset()
         self.ready_reset_after_id = self.root.after(delay_ms, self._restore_idle_status)
+
+    def _short_sha(self, sha: str | None) -> str:
+        if not sha:
+            return "unknown"
+        return sha[:8]
+
+    def start_model_update_check(self):
+        if self.model_check_running or self.model_update_in_progress:
+            return
+        self.model_check_running = True
+        self.log("Model Check: checking for Parakeet updates...")
+        thread = threading.Thread(target=self._model_update_check_thread, daemon=True)
+        thread.start()
+
+    def _model_update_check_thread(self):
+        try:
+            from model_update import check_for_update
+
+            result = check_for_update(
+                cache_dir=self.model_cache,
+                repo_id=PARAKEET_MODEL,
+                state_path=self.model_update_state_path,
+                min_interval_hours=24,
+                timeout_s=3.0,
+            )
+            self.log_queue.put(("__MODEL_CHECK_RESULT__", result))
+        except Exception as exc:
+            self.log_queue.put(("__MODEL_CHECK_RESULT__", exc))
+
+    def _handle_model_check_result(self, payload):
+        self.model_check_running = False
+        if isinstance(payload, Exception):
+            self.log(f"Model Check: failed ({payload})")
+            return
+
+        result = payload
+        if getattr(result, "message", ""):
+            self.log(result.message)
+
+        if getattr(result, "status", "") != "update_available":
+            return
+
+        if self.processing_active:
+            self.pending_model_prompt = result
+            self.log("Model Check: update deferred until current processing finishes")
+            return
+
+        if getattr(result, "should_prompt", False):
+            self._show_model_update_prompt(result)
+
+    def _close_model_prompt(self):
+        if self.model_update_prompt and self.model_update_prompt.winfo_exists():
+            self.model_update_prompt.destroy()
+        self.model_update_prompt = None
+
+    def _show_model_update_prompt(self, result):
+        if self.model_update_prompt and self.model_update_prompt.winfo_exists():
+            return
+
+        dialog = tk.Toplevel(self.root)
+        self.model_update_prompt = dialog
+        dialog.title("Parakeet Update Available")
+        dialog.geometry("560x255")
+        dialog.configure(bg="#f5f5f7")
+        dialog.resizable(False, False)
+        dialog.transient(self.root)
+
+        local_sha = self._short_sha(getattr(result, "local_sha", None))
+        remote_sha = self._short_sha(getattr(result, "remote_sha", None))
+
+        tk.Label(
+            dialog,
+            text="Parakeet model update available",
+            font=("SF Pro Display", 18, "bold"),
+            bg="#f5f5f7",
+            fg="#1d1d1f",
+        ).pack(pady=(20, 10))
+
+        tk.Label(
+            dialog,
+            text=f"Current: {local_sha}   New: {remote_sha}",
+            font=("SF Pro Display", 12),
+            bg="#f5f5f7",
+            fg="#5f6368",
+        ).pack(pady=(0, 10))
+
+        tk.Label(
+            dialog,
+            text="Update now to refresh the local model cache.\nYou can continue using the app while it downloads.",
+            font=("SF Pro Display", 12),
+            bg="#f5f5f7",
+            fg="#3c4043",
+            justify=tk.CENTER,
+        ).pack()
+
+        buttons = tk.Frame(dialog, bg="#f5f5f7")
+        buttons.pack(pady=(22, 0))
+
+        update_btn = ModernButton(
+            buttons,
+            text="Update now",
+            command=lambda: self._on_model_update_now(getattr(result, "remote_sha", None)),
+            bg_color="#007AFF",
+            text_color="white",
+            font_size=14,
+            padx=30,
+            pady=10,
+        )
+        update_btn.pack(side=tk.LEFT, padx=8)
+
+        later_btn = ModernButton(
+            buttons,
+            text="Later",
+            command=lambda: self._on_model_update_later(getattr(result, "remote_sha", None)),
+            bg_color="#E5E5EA",
+            text_color="#1d1d1f",
+            font_size=14,
+            padx=30,
+            pady=10,
+        )
+        later_btn.pack(side=tk.LEFT, padx=8)
+
+        dialog.protocol("WM_DELETE_WINDOW", lambda: self._on_model_update_later(getattr(result, "remote_sha", None)))
+
+    def _on_model_update_later(self, remote_sha: str | None):
+        if remote_sha:
+            try:
+                from model_update import mark_deferred
+
+                mark_deferred(remote_sha, state_path=self.model_update_state_path)
+            except Exception as exc:
+                self.log(f"Model Check: could not save deferred update state ({exc})")
+        self.log("Model Check: update postponed")
+        self._close_model_prompt()
+
+    def _on_model_update_now(self, remote_sha: str | None):
+        self._close_model_prompt()
+        if not remote_sha:
+            self.log("Model Check: update failed (missing remote model revision)")
+            return
+        if self.processing_active:
+            self.pending_model_update_sha = remote_sha
+            self.log("Model Check: update deferred until current processing finishes")
+            return
+        self._start_model_update_download(remote_sha)
+
+    def _start_model_update_download(self, remote_sha: str):
+        if self.model_update_in_progress:
+            return
+        self.model_update_in_progress = True
+        self.log("Model Check: update started")
+        thread = threading.Thread(target=self._model_update_apply_thread, args=(remote_sha,), daemon=True)
+        thread.start()
+
+    def _model_update_apply_thread(self, remote_sha: str):
+        try:
+            from model_update import apply_update
+
+            result = apply_update(
+                cache_dir=self.model_cache,
+                repo_id=PARAKEET_MODEL,
+                remote_sha=remote_sha,
+                state_path=self.model_update_state_path,
+                timeout_s=3.0,
+            )
+            self.log_queue.put(("__MODEL_UPDATE_RESULT__", result))
+        except Exception as exc:
+            self.log_queue.put(("__MODEL_UPDATE_RESULT__", exc))
+
+    def _handle_model_update_result(self, payload):
+        self.model_update_in_progress = False
+        if isinstance(payload, Exception):
+            self.log(f"Model Check: update failed ({payload})")
+            return
+
+        result = payload
+        if getattr(result, "success", False):
+            self.log(getattr(result, "message", "Model Check: update complete"))
+            return
+
+        error = getattr(result, "error", None) or "unknown error"
+        self.log(f"Model Check: update failed ({error})")
+
+    def _run_pending_model_actions(self):
+        if self.processing_active:
+            return
+        if self.pending_model_update_sha:
+            remote_sha = self.pending_model_update_sha
+            self.pending_model_update_sha = None
+            self._start_model_update_download(remote_sha)
+            return
+        if self.pending_model_prompt is not None:
+            pending = self.pending_model_prompt
+            self.pending_model_prompt = None
+            if getattr(pending, "should_prompt", False):
+                self._show_model_update_prompt(pending)
 
     def check_services_on_startup(self):
         """Check service availability when app starts"""
@@ -864,6 +1070,7 @@ class TranscriptProcessorApp:
             self._set_status(f"⚠️  Completed: {success_count}/{total_count} files processed", "#fff4ce", "#805800")
             self.log(f"\n⚠️  {success_count} of {total_count} files processed")
             self._schedule_idle_reset(3500)
+        self._run_pending_model_actions()
 
     def _processing_error(self, error_msg):
         """Called when processing fails"""
@@ -874,6 +1081,7 @@ class TranscriptProcessorApp:
         self._set_status("✗ Processing failed", "#ffdce0", "#a41c27")
         self.log(f"\n✗ Error: {error_msg}")
         messagebox.showerror("Processing Error", error_msg)
+        self._run_pending_model_actions()
 
     def toggle_log(self):
         """Toggle log visibility and window size"""
@@ -938,6 +1146,7 @@ class TranscriptProcessorApp:
         else:
             self._set_status(f"⚠️  Completed: {success_count}/{total_count} files processed", "#fff4ce", "#805800")
             self._schedule_idle_reset(3500)
+        self._run_pending_model_actions()
 
     def _animate_activity(self):
         """Animate dots in status bar"""
@@ -979,6 +1188,12 @@ class TranscriptProcessorApp:
                     continue
                 if event == "__PROCESS_ERROR__":
                     self._processing_error(msg[1])
+                    continue
+                if event == "__MODEL_CHECK_RESULT__":
+                    self._handle_model_check_result(msg[1])
+                    continue
+                if event == "__MODEL_UPDATE_RESULT__":
+                    self._handle_model_update_result(msg[1])
                     continue
             self._append_log(msg)
         self.root.after(100, self._flush_log_queue)
