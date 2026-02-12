@@ -184,7 +184,7 @@ class TranscriptProcessorApp:
             return
 
         self.setup_ui()
-        self.log("Runtime build: 0.1.7")
+        self.log("Runtime build: 0.1.8")
         self.load_startup_update_log()
         self.check_services_on_startup()
         # Start periodic log flushing on the UI thread.
