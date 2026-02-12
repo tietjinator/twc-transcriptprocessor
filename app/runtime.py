@@ -9,7 +9,7 @@ RUNTIME_PYTHON = RUNTIME_DIR / "python" / "bin" / "python3"
 RUNTIME_VENV_PY = RUNTIME_DIR / "venv" / "bin" / "python"
 INSTALL_MARKER = RUNTIME_DIR / ".installed"
 RUNTIME_VERSION_MARKER = RUNTIME_DIR / ".runtime_version"
-RUNTIME_VERSION = "0.1.3"
+RUNTIME_VERSION = "0.1.4"
 
 
 def runtime_exists() -> bool:

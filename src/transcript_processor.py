@@ -7,6 +7,7 @@ from typing import Callable, Optional
 import threading
 import queue
 import time
+import os
 from datetime import datetime
 from media_converter import MediaConverter
 from whisper_client import WhisperClient
@@ -136,6 +137,21 @@ class TranscriptProcessor:
     def is_supported_file(self, file_path: Path) -> bool:
         """Check if file extension is supported"""
         return file_path.suffix.lower() in SUPPORTED_EXTENSIONS
+
+    @staticmethod
+    def _default_log_dir(media_files: list[Path]) -> Path:
+        """Choose a stable log directory when no explicit output directory is provided."""
+        if not media_files:
+            return Path.cwd()
+
+        parent_paths = [str(p.parent) for p in media_files]
+        try:
+            common = Path(os.path.commonpath(parent_paths))
+            if common.exists():
+                return common
+        except Exception:
+            pass
+        return media_files[0].parent
 
     def _transcribe_parakeet_with_heartbeat(
         self,
@@ -397,11 +413,8 @@ class TranscriptProcessor:
         failures = []
         total = len(media_files)
 
-        # Determine log file location
-        if output_base_dir is None and media_files:
-            output_base_dir = media_files[0].parent
-
-        log_file = output_base_dir / f"processing_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        log_dir = output_base_dir if output_base_dir is not None else self._default_log_dir(media_files)
+        log_file = log_dir / f"processing_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
 
         # Start log file
         log_lines = []
@@ -410,7 +423,11 @@ class TranscriptProcessor:
         log_lines.append("="*80)
         log_lines.append(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         log_lines.append(f"Total files: {total}")
-        log_lines.append(f"Output directory: {output_base_dir}")
+        if output_base_dir is None:
+            log_lines.append("Output directory: same folder as each source file")
+        else:
+            log_lines.append(f"Output directory: {output_base_dir}")
+        log_lines.append(f"Log directory: {log_dir}")
         log_lines.append(f"Mode: PIPELINED (Whisper & Claude run in parallel)")
         log_lines.append("="*80)
         log_lines.append("")
@@ -618,7 +635,8 @@ class TranscriptProcessor:
                         formatted_data['speaker_name']
                     )
 
-                    output_path = output_base_dir / output_filename
+                    target_output_dir = output_base_dir if output_base_dir is not None else media_file.parent
+                    output_path = target_output_dir / output_filename
                     self.pdf_gen.create_pdf(formatted_data, output_path)
 
                     if progress_callback:
@@ -730,11 +748,8 @@ class TranscriptProcessor:
         failures = []
         total = len(media_files)
 
-        # Determine log file location
-        if output_base_dir is None and media_files:
-            output_base_dir = media_files[0].parent
-
-        log_file = output_base_dir / f"processing_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        log_dir = output_base_dir if output_base_dir is not None else self._default_log_dir(media_files)
+        log_file = log_dir / f"processing_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
 
         # Start log file
         log_lines = []
@@ -743,7 +758,11 @@ class TranscriptProcessor:
         log_lines.append("="*80)
         log_lines.append(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         log_lines.append(f"Total files: {total}")
-        log_lines.append(f"Output directory: {output_base_dir}")
+        if output_base_dir is None:
+            log_lines.append("Output directory: same folder as each source file")
+        else:
+            log_lines.append(f"Output directory: {output_base_dir}")
+        log_lines.append(f"Log directory: {log_dir}")
         log_lines.append("="*80)
         log_lines.append("")
 
