@@ -103,6 +103,7 @@ FINAL_DMG="$BUILD_DIR/$DMG_NAME"
 
 mkdir -p "$DMG_BACKGROUND_DIR"
 rm -rf "$DMG_STAGING/$APP_NAME"
+rm -rf "$DMG_STAGING/Applications"
 cp -R "$APP_PATH" "$DMG_STAGING/$APP_NAME"
 ln -sfn /Applications "$DMG_STAGING/Applications"
 

@@ -40,24 +40,50 @@ let bgBottom = NSColor(calibratedRed: 0.90, green: 0.93, blue: 0.98, alpha: 1.0)
 let gradient = NSGradient(starting: bgTop, ending: bgBottom)!
 gradient.draw(in: rect, angle: -90)
 
-let arrowColor = NSColor(calibratedRed: 0.05, green: 0.45, blue: 0.90, alpha: 0.55)
-arrowColor.setFill()
+let glowLeft = NSColor(calibratedRed: 0.75, green: 0.86, blue: 1.0, alpha: 0.16)
+let glowRight = NSColor(calibratedRed: 0.62, green: 0.78, blue: 1.0, alpha: 0.14)
+glowLeft.setFill()
+NSBezierPath(ovalIn: NSRect(x: 76, y: 86, width: 212, height: 212)).fill()
+glowRight.setFill()
+NSBezierPath(ovalIn: NSRect(x: 392, y: 86, width: 212, height: 212)).fill()
+
+let arrowGlow = NSColor(calibratedRed: 0.12, green: 0.50, blue: 0.92, alpha: 0.20)
+let arrowColor = NSColor(calibratedRed: 0.10, green: 0.48, blue: 0.90, alpha: 0.82)
 
 let centerY: CGFloat = 210
-let startX: CGFloat = 250
-let endX: CGFloat = 430
-let shaftHeight: CGFloat = 16
-let headSize: CGFloat = 34
+let shaftStart: CGFloat = 250
+let shaftEnd: CGFloat = 412
+let headTip: CGFloat = 438
 
-let shaftRect = NSRect(x: startX, y: centerY - shaftHeight / 2, width: endX - startX - headSize, height: shaftHeight)
-NSBezierPath(roundedRect: shaftRect, xRadius: shaftHeight / 2, yRadius: shaftHeight / 2).fill()
+let arrowShadow = NSBezierPath()
+arrowShadow.lineCapStyle = .round
+arrowShadow.lineJoinStyle = .round
+arrowShadow.lineWidth = 22
+arrowShadow.move(to: NSPoint(x: shaftStart, y: centerY))
+arrowShadow.line(to: NSPoint(x: shaftEnd, y: centerY))
+arrowGlow.setStroke()
+arrowShadow.stroke()
 
-let head = NSBezierPath()
-head.move(to: NSPoint(x: endX - headSize, y: centerY - headSize / 2))
-head.line(to: NSPoint(x: endX, y: centerY))
-head.line(to: NSPoint(x: endX - headSize, y: centerY + headSize / 2))
-head.close()
-head.fill()
+let arrow = NSBezierPath()
+arrow.lineCapStyle = .round
+arrow.lineJoinStyle = .round
+arrow.lineWidth = 14
+arrow.move(to: NSPoint(x: shaftStart, y: centerY))
+arrow.line(to: NSPoint(x: shaftEnd, y: centerY))
+arrow.move(to: NSPoint(x: shaftEnd - 18, y: centerY + 20))
+arrow.line(to: NSPoint(x: headTip, y: centerY))
+arrow.line(to: NSPoint(x: shaftEnd - 18, y: centerY - 20))
+arrowColor.setStroke()
+arrow.stroke()
+
+let applicationsIcon = NSWorkspace.shared.icon(forFile: "/Applications")
+applicationsIcon.size = NSSize(width: 128, height: 128)
+applicationsIcon.draw(
+    in: NSRect(x: 438, y: 102, width: 128, height: 128),
+    from: .zero,
+    operation: .sourceOver,
+    fraction: 0.30
+)
 
 let text = "Drag Transcript Processor to Applications"
 let paragraph = NSMutableParagraphStyle()
